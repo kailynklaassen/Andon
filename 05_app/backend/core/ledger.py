@@ -298,7 +298,7 @@ def ledger() -> pd.DataFrame:
             return cur.fetchall()
         df = pd.DataFrame(_run(select), columns=LEDGER_COLUMNS)
         for c in ("created_ts", "reviewed_ts", "synced_ts"):
-            df[c] = pd.to_datetime(df[c], utc=True).dt.tz_localize(None)
+            df[c] = pd.to_datetime(df[c], utc=True)          # keep the UTC offset: the browser shows local time
     elif LOCAL_LEDGER.exists():
         df = pd.DataFrame([json.loads(l) for l in LOCAL_LEDGER.read_text().splitlines() if l.strip()])
         # the local ledger is an append-only event log: the last line per action_id (file order) is its state
