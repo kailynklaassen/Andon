@@ -91,7 +91,7 @@ class RunLog:
                               avg((s->>'seconds')::float), percentile_cont(0.95) WITHIN GROUP (ORDER BY (s->>'seconds')::float)
                        FROM {SCHEMA}.runs, jsonb_array_elements(steps) s WHERE {since} GROUP BY 1 ORDER BY 2 DESC""")
         return {
-            "hours": hours, "runs": total, "errors": errors,             # errors = runs with an issue "stopped": stopped,
+            "hours": hours, "runs": total, "errors": errors, "stopped": stopped,   # errors = runs with an issue
             "p50_s": round((p50 or 0) / 1000, 1), "p95_s": round((p95 or 0) / 1000, 1),
             "users": [{"user": u, "runs": n, "errors": e, "sessions": s, "avg_s": round((a or 0) / 1000, 1),
                        "last": t.isoformat()} for u, n, e, s, a, t in users],
