@@ -247,6 +247,7 @@ if groups:
 # COMMAND ----------
 
 spark.createDataFrame(registry).write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{CATALOG}.{GOLD_SCHEMA}.genie_space_registry")
+spark.sql(f"GRANT SELECT ON TABLE `{CATALOG}`.`{GOLD_SCHEMA}`.genie_space_registry TO `account users`")   # tool discovery for the supervisor
 os.makedirs(REGISTRY_PATH, exist_ok=True)
 with open(f"{REGISTRY_PATH}/genie_space_registry.json", "w") as f:
     json.dump(registry, f, indent=2)

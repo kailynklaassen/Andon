@@ -94,7 +94,7 @@ for g in GROUPS:
         for vol in (docs_volume(d), notes_volume(d)):
             sql(f"GRANT READ VOLUME ON VOLUME `{CATALOG}`.`{LANDING_SCHEMA}`.`{vol}` TO {grp}", quiet=True)
     print(f"✅ {g['name']:<22} SELECT on {len(allowed)} objects, documents: {', '.join(g['domains'])}")
-sql(f"GRANT SELECT ON TABLE {G}.genie_space_registry TO `account users`")   # tool discovery for the supervisor
+# (SELECT on gold.genie_space_registry is granted by 03_genie_spaces/01_create_genie_spaces, which creates it)
 
 # COMMAND ----------
 
