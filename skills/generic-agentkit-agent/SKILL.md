@@ -1,9 +1,9 @@
 ---
-name: build-agentkit-agent
-description: Build any custom agent in Python on the Databricks Agent Server — the AgentKit Python SDK's DurableAgentServer (package databricks-agentbricks, module databricks_agentkit) — hosted on Databricks Apps and deployed WITHOUT the Beta Agent Bricks CLI (Apps REST API or DABs). Covers the invoke/recover handlers, streaming events, durable runs and reconnect, sessions, calling Foundation Model API models and tools, wiring several Genie spaces together as parallel domain-expert tools (Agent mode or Chat mode / AgentKit GenieAgent), on-behalf-of-user auth, MLflow tracing to Unity Catalog, deployment and evaluation. Use when someone wants a new custom agent, wants to move a custom FastAPI / MLflow AgentServer / ResponsesAgent / Model Serving agent onto the Agent Server, or asks how to use DurableAgentServer. For a full worked supervisor over Genie spaces (spaces as code, notes by priority), also load build-custom-supervisor.
+name: generic-agentkit-agent
+description: GENERIC skill (not specific to Andon) — build any custom agent in Python on the Databricks Agent Server — the AgentKit Python SDK's DurableAgentServer (package databricks-agentbricks, module databricks_agentkit) — hosted on Databricks Apps and deployed WITHOUT the Beta Agent Bricks CLI (Apps REST API or DABs). Covers the invoke/recover handlers, streaming events, durable runs and reconnect, sessions, calling Foundation Model API models and tools, wiring several Genie spaces together as parallel domain-expert tools (Agent mode or Chat mode / AgentKit GenieAgent), on-behalf-of-user auth, MLflow tracing to Unity Catalog, deployment and evaluation. Use when someone wants a new custom agent, wants to move a custom FastAPI / MLflow AgentServer / ResponsesAgent / Model Serving agent onto the Agent Server, or asks how to use DurableAgentServer. To change or extend the Andon demo itself (its Foreman supervisor and Genie spaces), use the andon-supervisor skill instead.
 ---
 
-# Build a custom agent on the Agent Server (AgentKit `DurableAgentServer`)
+# Generic: build a custom agent on the Agent Server (AgentKit `DurableAgentServer`)
 
 You are helping a Databricks user build a **custom agent**: their own Python agent loop, hosted on the **Agent Server**
 (AgentKit's `DurableAgentServer`) as a Databricks App. This skill is domain-neutral. A complete worked example is
@@ -243,7 +243,7 @@ query SQL".
 **8. Test both layers.** Benchmark each Genie space on its own questions. Then evaluate the agent on **routing**
 (did it call the right spaces?) and **correctness** (expected facts). When a regression appears, you know which layer
 caused it. For a full worked example (spaces as YAML, registry, routing prompt, notes by priority), load the
-`build-custom-supervisor` skill.
+`andon-supervisor` skill.
 
 ## 7 · Deploy without the CLI (Apps REST from a notebook, or DABs)
 ```python

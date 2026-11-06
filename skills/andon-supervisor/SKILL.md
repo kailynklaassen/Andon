@@ -1,9 +1,9 @@
 ---
-name: build-custom-supervisor
-description: Build a custom, code-first supervisor agent (SA) on Databricks that routes questions across domain Genie spaces (each with its documents and approved human notes attached as volumes), hosted on the Agent Server (AgentKit DurableAgentServer) on Databricks Apps with durable runs, Genie on behalf of the asking user, MLflow traces in Unity Catalog, and Lakebase sessions/memory. Use when someone asks to create a supervisor/multi-agent system over Genie spaces, migrate off the Supervisor Agent tile or a legacy custom orchestrator / Model Serving agent, or add a new domain to an existing supervisor.
+name: andon-supervisor
+description: ANDON SUPERVISOR skill — the custom supervisor agent (Foreman) behind the Andon demo, which routes questions across domain Genie spaces (each with its documents and approved human notes attached as volumes), hosted on the Agent Server (AgentKit DurableAgentServer) on Databricks Apps with durable runs, Genie on behalf of the asking user, MLflow traces in Unity Catalog, and Lakebase sessions/memory. Use it to update Andon, add another Genie space (domain) to Andon or change an existing one, or to build the same supervisor pattern for another business. For a generic custom agent that isn't this supervisor, use generic-agentkit-agent.
 ---
 
-# Build a custom supervisor over Genie spaces
+# Andon supervisor: Foreman over the domain Genie spaces
 
 You are helping a Databricks user build a **custom supervisor agent**: plain Python they own, hosted on the
 **Agent Server** and governed by Unity Catalog. Reference implementation: `04_supervisor_agent/` in the KK's Parts
@@ -37,7 +37,37 @@ browser ─► client app (e.g. Andon, Apps user auth: genie scope) ─► super
 ```
 Unity Catalog decides what each user sees: domain GRANTs, `READ VOLUME` on each domain's volumes, ABAC column masks.
 
-## Workflow — do these in order, confirming with the user between steps
+## Add a Genie space to Andon, or change one
+Everything is driven by config and the space YAML, so `foreman.py` and `server.py` don't change. Foreman reads its
+tools from `genie_space_registry`, which Step 3b writes.
+
+**Add a domain** (key `<key>`, e.g. `energy`):
+1. `config/demo_config.yml` → `genie.spaces`: add `{ key: <key>, title: "...", docs_folder: <key> }`. This list drives
+   the `genie_docs_<folder>` and `app_notes_<key>` volumes, the note router's domains and the Foreman app's volume grants.
+2. `03_genie_spaces/spaces/<key>.yml`: copy an existing space. The **description is the routing rule** for questions
+   and for notes, so say what it covers *and* what it doesn't. Then fill in `metric_views`, `tables`, `join_specs`,
+   `sql_snippets`, `example_sqls`, `text_instructions`, `sample_questions` and `benchmarks`.
+3. The gold tables and metric views it lists must exist (Step 2, `02_medallion_pipeline/`). Step 2c tags and grants
+   them from the space YAML.
+4. Documents: put markdown in `01_data_generation/documents/<docs_folder>/`, which Step 1b renders to PDF. You can
+   also put your own PDFs in the `genie_docs_<docs_folder>` volume.
+5. `governance.groups`: add `<key>` to the `domains` of every group that should use it (that sets the space's `CAN_RUN`
+   and the UC grants).
+6. `04_supervisor_agent/eval/eval_set.yml`: add a few cases with `expected_tools: [<key>]` and at least one
+   cross-domain case.
+7. Run, in order: 1b → 2c → 3b → 3c → 4b → 4c → 6a. Running `99_run_all` with the earlier steps skipped does the
+   same. 4b re-renders `app.yaml`, which gives Foreman `CAN_RUN` on the new space and access to its volumes. 6a
+   creates the notes volume.
+
+**Change an existing space:** edit its `spaces/<key>.yml` and re-run 3b, which updates it in place with the same
+`space_id`. Then re-run 4b, because Foreman's routing reads the descriptions from the registry when it is deployed.
+Re-run 3c and 4c to catch regressions.
+
+The Andon board pages (`05_app/backend/core/`, `frontend/src/pages/`) are dashboards written for the four KK's Parts
+domains. A new space shows up in Foreman chat and in note routing without touching them. Add a board page only if
+you want a dashboard for the new domain.
+
+## Workflow for a new supervisor — do these in order, confirming with the user between steps
 
 ### 1. Inventory the domains
 - List the Genie spaces (`GET /api/2.0/genie/spaces`). One space per business domain; a precise **description**
@@ -103,7 +133,7 @@ Unity Catalog decides what each user sees: domain GRANTs, `READ VOLUME` on each 
   (the app SP creates and owns the schema). The SDK supports this pair in code (`runtime/store.py`,
   `from_app_resource` — its "legacy Apps resource" path) but the public docs only describe the CLI-provisioned store,
   so pin `databricks-agentbricks` and re-test on upgrade. Also `MLFLOW_EXPERIMENT_ID` (valueFrom),
-  `MLFLOW_TRACING_SQL_WAREHOUSE_ID`. Generic AgentKit guidance: skill `build-agentkit-agent`.
+  `MLFLOW_TRACING_SQL_WAREHOUSE_ID`. Generic AgentKit guidance: skill `generic-agentkit-agent`.
 - Experiment bound to UC trace tables at creation (`mlflow.set_experiment(..., trace_location=UnityCatalog(...))`,
   MLflow ≥ 3.14); grant the SP `USE SCHEMA, MODIFY, SELECT` on the traces schema.
 - The client app: `user_api_scopes: ["genie"]`, `CAN_USE` on the supervisor app, and it calls `POST /api/invocations`

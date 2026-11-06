@@ -77,7 +77,9 @@ newly written note files weren't found until the index was re-synced. So the syn
 itself after writing notes and records when each note becomes searchable.
 
 ## Build your own
-`skills/` holds the pattern, written for any domain. Point an AI coding agent at it:
-- `skills/build-agentkit-agent`: any custom agent on the Agent Server. Covers the SDK, the client protocol,
-  the runtime store, identity, wiring Genie spaces together, tracing, deploying without the CLI, and evaluation.
-- `skills/build-custom-supervisor`: a supervisor over Genie spaces, following this repo's layout.
+`skills/` holds two skills. Point an AI coding agent at them:
+- `skills/generic-agentkit-agent`, the **generic** skill: any custom agent on the Agent Server, not tied to Andon.
+  Covers the SDK, the client protocol, the runtime store, identity, wiring Genie spaces together, tracing, deploying
+  without the CLI, and evaluation.
+- `skills/andon-supervisor`, the **Andon supervisor** skill: use it to update Andon, add another Genie space to it or
+  change an existing one. It also shows how to reuse the same supervisor pattern for another business.
