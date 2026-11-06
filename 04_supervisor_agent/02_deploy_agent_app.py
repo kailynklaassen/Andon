@@ -149,6 +149,7 @@ resources = [{"name": f"genie-{r['domain_key'].replace('_', '-')}",
               "genie_space": {"space_id": r["space_id"], "name": r["title"], "permission": "CAN_RUN"}} for r in registry]
 resources += [{"name": "sql-warehouse", "sql_warehouse": {"id": WAREHOUSE_ID, "permission": "CAN_USE"}},
               {"name": "experiment", "experiment": {"experiment_id": exp_id, "permission": "CAN_EDIT"}}]
+MODELS = list(dict.fromkeys([agent_config["router_llm"], agent_config["answer_llm"]]))   # the models the agent calls
 if SUP.get("memory", True):                                       # optional: sessions + long-term memory
     resources.append({"name": "postgres", "postgres": {"branch": branch, "database": f"{branch}/databases/{LB['database']}",
                                                        "permission": "CAN_CONNECT_AND_CREATE"}})
@@ -200,6 +201,35 @@ grants += [f"GRANT READ VOLUME ON VOLUME `{CATALOG}`.`{LANDING_SCHEMA}`.`{v}` TO
 for stmt in grants:
     spark.sql(stmt)
     print(" ", stmt)
+
+# Foundation models are Unity Catalog objects (system.ai.<model>), called by this app as its service principal.
+# By default every principal inherits EXECUTE on them from the `system` catalog / `system.ai` schema, so usually there's
+# nothing to do here. If an admin has restricted a model, the app needs EXECUTE on it: granted below if you have
+# MANAGE on the model; otherwise the cell stops and says what to ask for. (No app resource is needed for these models.)
+def can_execute(model: str) -> bool:
+    eff = w.grants.get_effective(securable_type="function", full_name=f"system.ai.{model}", principal=SP)
+    return any(str(p.privilege).endswith(("EXECUTE", "ALL_PRIVILEGES"))
+               for a in (eff.privilege_assignments or []) for p in (a.privileges or []))
+
+missing = []
+for m in MODELS:
+    if not m.startswith("databricks-"):
+        continue                                       # not a Databricks-hosted foundation model
+    if can_execute(m):
+        print(f"✅ the app can call {m}")
+        continue
+    stmt = f"GRANT EXECUTE ON FUNCTION system.ai.`{m}` TO `{SP}`"
+    try:
+        spark.sql(stmt)
+        print(f"  {stmt}   (access to {m} is restricted in this workspace)")
+    except Exception as e:
+        missing.append(m)
+        print(f"⚠️ access to {m} is restricted and you can't grant it ({str(e)[:120]})")
+if missing:
+    raise RuntimeError(
+        f"The Foreman app ({SP}) can't call {', '.join(missing)}. Ask someone with MANAGE on the model(s) to run "
+        + "; ".join(f"GRANT EXECUTE ON FUNCTION system.ai.`{m}` TO `{SP}`" for m in missing)
+        + " — or pick another model in supervisor.router_llm / answer_llm — then re-run this notebook.")
 
 # COMMAND ----------
 

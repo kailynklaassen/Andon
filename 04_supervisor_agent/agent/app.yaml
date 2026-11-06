@@ -7,7 +7,8 @@
 #   postgres             → CAN_CONNECT_AND_CREATE   Lakebase kkparts-hitl: sessions + long-term memory (schema foreman)
 # Unity Catalog: with genie_auth = on_behalf_of_user Genie runs as the person asking (their grants apply). For
 # service_principal mode the app has SELECT/EXECUTE on gold and READ VOLUME on the documents + notes volumes.
-# The Foundation Models need no grant (pay-per-token).
+# Foundation Models: no resource needed. The app calls them as its service principal, which needs EXECUTE on
+# system.ai.<model> (inherited by everyone by default; the deploy checks, and grants it where a model is restricted).
 command:
 - uvicorn
 - server:app
