@@ -41,9 +41,23 @@ try:
 except Exception as e:
     check("SQL warehouse", False, f"set workspace.warehouse_name or warehouse_id ({e})")
 names = {e.name for e in w.serving_endpoints.list()}
+# Foundation models are Unity Catalog objects (system.ai.<model>): you can only see and call the ones you have
+# EXECUTE on, so a model that appears in Serving can still be missing here: an admin may have restricted it. (Step 4
+# checks the Foreman app's own access when it deploys it.)
 for key in ("router_llm", "answer_llm"):
     m = CFG["supervisor"].get(key)
-    check(f"model `{m}` ({key}) is available", m in names, "pick a model from Serving → Foundation Models")
+    grant_hint = (f"you may not have access to it: check with SHOW GRANTS ON FUNCTION system.ai.`{m}` "
+                  f"(or Catalog → system → ai → {m} → Permissions), and ask someone with MANAGE on it to "
+                  "GRANT EXECUTE to you (Step 4 then also needs the Foreman app to have EXECUTE on it), "
+                  "or pick another model")
+    hint = f"not available to you. It may not be offered in this region, or {grant_hint}"
+    if m not in names:                  # the list only shows endpoints you may use: find out whether it exists
+        try:
+            w.serving_endpoints.get(m)
+        except Exception as e:
+            if "EXECUTE" in str(e):
+                hint = f"it exists, but you lack EXECUTE on system.ai.{m}. {grant_hint[0].upper() + grant_hint[1:]}"
+    check(f"model `{m}` ({key}) is available to you", m in names, hint)
 me = w.current_user.me()
 check(f"you ({me.user_name}) are a workspace admin", any(g.display == "admins" for g in (me.groups or [])),
       "Steps 2c and 4 create groups, users and apps — ask an admin to run them")
