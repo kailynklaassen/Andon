@@ -136,13 +136,24 @@ visible = CONF["visible_to"]
 sql(f"""CREATE OR REPLACE FUNCTION {G}.`mask_confidential`(value DOUBLE) RETURNS DOUBLE
         COMMENT 'ABAC column mask: confidential commercial values are visible only to {", ".join(visible)}'
         RETURN CASE WHEN {" OR ".join(f"is_account_group_member('{g}')" for g in visible)} THEN value ELSE NULL END""")
-sql(f"""CREATE OR REPLACE POLICY `kkparts_confidential_mask` ON SCHEMA {G}
-        COMMENT 'Confidential commercial values (prices, costs, PO and order values) are masked outside {", ".join(visible)}'
-        COLUMN MASK {G}.`mask_confidential`
-        TO `account users` EXCEPT {", ".join(f"`{g}`" for g in visible)}
-        FOR TABLES
-        MATCH COLUMNS {match} AS conf
-        ON COLUMN conf""")
+# A governed tag created moments ago can take a few minutes to reach the policy compiler ("Unknown tag policy key"),
+# so on a fresh workspace the first attempt can fail: retry for up to ~5 minutes.
+import time
+for attempt in range(11):
+    try:
+        sql(f"""CREATE OR REPLACE POLICY `kkparts_confidential_mask` ON SCHEMA {G}
+                COMMENT 'Confidential commercial values (prices, costs, PO and order values) are masked outside {", ".join(visible)}'
+                COLUMN MASK {G}.`mask_confidential`
+                TO `account users` EXCEPT {", ".join(f"`{g}`" for g in visible)}
+                FOR TABLES
+                MATCH COLUMNS {match} AS conf
+                ON COLUMN conf""", quiet=attempt > 0)
+        break
+    except Exception as e:
+        if "Unknown tag policy key" not in str(e) or attempt == 10:
+            raise
+        print(f"   governed tag {TAG} not visible to policies yet — retrying in 30 s")
+        time.sleep(30)
 print(f"✅ confidential columns masked for everyone except {visible}")
 
 display(spark.sql(f"SHOW POLICIES ON SCHEMA {G}"))
