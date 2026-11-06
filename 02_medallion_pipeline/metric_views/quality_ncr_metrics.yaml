@@ -1,0 +1,183 @@
+# Metric view: quality_ncr_metrics   (Genie space: quality)
+# Deployed by 02_create_metric_views as {catalog}.{gold_schema}.quality_ncr_metrics
+# {catalog} / {gold_schema} are filled in from config/demo_config.yml.
+version: 1.1
+source: '{catalog}.{gold_schema}.fact_nonconformance'
+comment: Nonconformance (NCR) and cost-of-poor-quality KPIs, with linked CAPA status. Use for NCR counts, COPQ, supplier quality escapes, and defect Pareto by plant, line, supplier, and period.
+dimensions:
+- name: Opened Date
+  expr: opened_date
+  comment: Calendar date of the opened.
+  display_name: Opened Date
+  synonyms:
+  - opened day
+  - date
+- name: Opened Month
+  expr: opened_month
+  comment: First day of the calendar month of the opened.
+  display_name: Opened Month
+  synonyms:
+  - month
+- name: Fiscal Quarter
+  expr: fiscal_quarter
+  comment: 'KK''s Parts fiscal quarter, e.g. ''FY26 Q3''. Fiscal year starts Oct 1: Q1 Oct-Dec, Q2 Jan-Mar, Q3 Apr-Jun, Q4 Jul-Sep.'
+  display_name: Fiscal Quarter
+  synonyms:
+  - quarter
+  - fiscal period
+  - FQ
+- name: NCR Source
+  expr: source
+  comment: 'Where the NCR came from: In-Process, Incoming Inspection, Customer Complaint.'
+  display_name: NCR Source
+  synonyms:
+  - source
+  - origin
+- name: Plant ID
+  expr: plant_id
+  comment: 'Plant code: CLB Columbus, GVL Greenville, MTY Monterrey, WRO Wroclaw, PNQ Pune.'
+  display_name: Plant ID
+  synonyms:
+  - site code
+  - plant code
+- name: Plant Name
+  expr: plant_name
+  comment: Plant name, e.g. 'Greenville Drivetrain Plant'.
+  display_name: Plant Name
+  synonyms:
+  - plant
+  - site
+  - factory
+  - facility
+- name: Line ID
+  expr: line_id
+  comment: Line where the nonconformance was found (null for incoming).
+  display_name: Line ID
+  synonyms:
+  - line
+- name: Machine ID
+  expr: machine_id
+  comment: Machine implicated, when known.
+  display_name: Machine ID
+  synonyms:
+  - machine
+  - work center
+- name: Part Number
+  expr: part_number
+  comment: Part affected (in-process NCRs).
+  display_name: Part Number
+  synonyms:
+  - part
+- name: Material Name
+  expr: material_name
+  comment: Purchased material affected (incoming NCRs).
+  display_name: Material Name
+  synonyms:
+  - material
+  - casting
+- name: Supplier Name
+  expr: supplier_name
+  comment: Supplier responsible (incoming NCRs), e.g. 'Brightline Castings'.
+  display_name: Supplier Name
+  synonyms:
+  - supplier
+  - vendor
+- name: Defect Code
+  expr: defect_code
+  comment: Defect code, e.g. Porosity, 'Crimp height out of spec', 'Bore out of tolerance'.
+  display_name: Defect Code
+  synonyms:
+  - defect
+  - defect type
+- name: Severity
+  expr: severity
+  comment: Major or Minor.
+  display_name: Severity
+  synonyms:
+  - severity level
+- name: Disposition
+  expr: disposition
+  comment: Scrap, Rework, Use As Is, Sort & Rework, Return to Vendor.
+  display_name: Disposition
+  synonyms:
+  - MRB decision
+- name: NCR Status
+  expr: ncr_status
+  comment: Open, Open - CAPA Pending, Closed.
+  display_name: NCR Status
+  synonyms:
+  - status
+- name: CAPA ID
+  expr: capa_id
+  comment: Linked CAPA, e.g. CAPA-2026-101.
+  display_name: CAPA ID
+  synonyms:
+  - CAPA
+  - corrective action
+- name: CAPA Status
+  expr: capa_status
+  comment: 'Status of the linked CAPA: Open, In Progress, Overdue, Closed.'
+  display_name: CAPA Status
+  synonyms:
+  - corrective action status
+measures:
+- name: NCR Count
+  expr: COUNT(1)
+  comment: Number of nonconformance reports.
+  display_name: NCR Count
+  synonyms:
+  - NCRs
+  - nonconformances
+  - quality incidents
+- name: Major NCRs
+  expr: COUNT(1) FILTER (WHERE severity = 'Major')
+  comment: Number of Major NCRs.
+  display_name: Major NCRs
+  synonyms:
+  - major nonconformances
+- name: Open NCRs
+  expr: COUNT(1) FILTER (WHERE ncr_status <> 'Closed')
+  comment: NCRs not yet closed.
+  display_name: Open NCRs
+  synonyms:
+  - open nonconformances
+- name: Quantity Affected
+  expr: SUM(qty_affected)
+  comment: Units affected by NCRs.
+  display_name: Quantity Affected
+  synonyms:
+  - affected units
+  - nonconforming quantity
+- name: COPQ USD
+  expr: SUM(cost_of_poor_quality_usd)
+  comment: Cost of poor quality from NCRs, USD.
+  display_name: COPQ USD
+  synonyms:
+  - cost of poor quality
+  - quality cost
+  - scrap and rework cost
+  format:
+    type: currency
+    currency_code: USD
+    decimal_places:
+      type: max
+      places: 0
+- name: Average COPQ per NCR
+  expr: MEASURE(`COPQ USD`) / MEASURE(`NCR Count`)
+  comment: Average COPQ per NCR, USD.
+  display_name: Average COPQ per NCR
+  synonyms:
+  - COPQ per NCR
+  format:
+    type: currency
+    currency_code: USD
+    decimal_places:
+      type: max
+      places: 0
+- name: Supplier NCRs
+  expr: COUNT(1) FILTER (WHERE source = 'Incoming Inspection')
+  comment: NCRs raised at incoming inspection against suppliers.
+  display_name: Supplier NCRs
+  synonyms:
+  - supplier escapes
+  - incoming NCRs

@@ -1,0 +1,246 @@
+# Metric view: maintenance_work_order_metrics   (Genie space: maintenance)
+# Deployed by 02_create_metric_views as {catalog}.{gold_schema}.maintenance_work_order_metrics
+# {catalog} / {gold_schema} are filled in from config/demo_config.yml.
+version: 1.1
+source: '{catalog}.{gold_schema}.fact_maintenance_work_order'
+comment: 'Maintenance work order KPIs from the CMMS: PM compliance, breakdowns, MTTR, and maintenance cost by plant, line, machine, OEM, failure mode, and period.'
+dimensions:
+- name: Created Date
+  expr: created_date
+  comment: Calendar date of the created.
+  display_name: Created Date
+  synonyms:
+  - created day
+  - date
+- name: Created Month
+  expr: created_month
+  comment: First day of the calendar month of the created.
+  display_name: Created Month
+  synonyms:
+  - month
+- name: Fiscal Quarter
+  expr: fiscal_quarter
+  comment: 'KK''s Parts fiscal quarter, e.g. ''FY26 Q3''. Fiscal year starts Oct 1: Q1 Oct-Dec, Q2 Jan-Mar, Q3 Apr-Jun, Q4 Jul-Sep.'
+  display_name: Fiscal Quarter
+  synonyms:
+  - quarter
+  - fiscal period
+  - FQ
+- name: Plant ID
+  expr: plant_id
+  comment: 'Plant code: CLB Columbus, GVL Greenville, MTY Monterrey, WRO Wroclaw, PNQ Pune.'
+  display_name: Plant ID
+  synonyms:
+  - site code
+  - plant code
+- name: Plant Name
+  expr: plant_name
+  comment: Plant name, e.g. 'Greenville Drivetrain Plant'.
+  display_name: Plant Name
+  synonyms:
+  - plant
+  - site
+  - factory
+  - facility
+- name: Line ID
+  expr: line_id
+  comment: Production line code, e.g. GVL-L3.
+  display_name: Line ID
+  synonyms:
+  - line code
+- name: Line Name
+  expr: line_name
+  comment: Production line name, e.g. 'Gearbox Assembly'.
+  display_name: Line Name
+  synonyms:
+  - line
+  - production line
+  - cell
+- name: Machine ID
+  expr: machine_id
+  comment: Work center / machine code '<LINE>-WC<nn>', e.g. GVL-L3-WC01.
+  display_name: Machine ID
+  synonyms:
+  - work center
+  - asset
+  - asset id
+  - equipment id
+- name: Machine Name
+  expr: machine_name
+  comment: 'Machine name, e.g. ''CNC Horizontal Machining Center #1''.'
+  display_name: Machine Name
+  synonyms:
+  - machine
+  - equipment
+  - asset name
+- name: Machine Type
+  expr: machine_type
+  comment: Machine type code, e.g. CNC_MACHINING_CENTER, CRIMP_PRESS.
+  display_name: Machine Type
+  synonyms:
+  - equipment type
+  - asset class
+- name: Criticality
+  expr: criticality
+  comment: 'Asset criticality: A = bottleneck/no redundancy, B, C.'
+  display_name: Criticality
+  synonyms:
+  - asset criticality
+  - criticality class
+- name: OEM
+  expr: oem
+  comment: Machine manufacturer, e.g. 'Hartwell Machine Tools'.
+  display_name: OEM
+  synonyms:
+  - manufacturer
+  - vendor
+  - machine builder
+- name: Work Order Type
+  expr: work_order_type
+  comment: Preventive, Corrective, or Emergency.
+  display_name: Work Order Type
+  synonyms:
+  - WO type
+  - maintenance type
+- name: Priority
+  expr: priority
+  comment: Medium, High, Critical.
+  display_name: Priority
+  synonyms:
+  - urgency
+- name: Failure Mode
+  expr: failure_mode
+  comment: Failure mode for breakdowns, e.g. 'spindle bearing wear'.
+  display_name: Failure Mode
+  synonyms:
+  - failure
+  - cause
+  - fault
+- name: Status
+  expr: status
+  comment: Completed or Deferred (PMs can be deferred).
+  display_name: Status
+  synonyms:
+  - WO status
+measures:
+- name: Work Orders
+  expr: COUNT(1)
+  comment: Number of work orders.
+  display_name: Work Orders
+  synonyms:
+  - WOs
+  - jobs
+- name: PMs Due
+  expr: COUNT(1) FILTER (WHERE is_preventive)
+  comment: Preventive maintenance work orders due.
+  display_name: PMs Due
+  synonyms:
+  - preventive maintenance due
+- name: PMs Completed
+  expr: COUNT(1) FILTER (WHERE is_pm_completed)
+  comment: Preventive maintenance completed.
+  display_name: PMs Completed
+  synonyms:
+  - PMs done
+- name: PMs Deferred
+  expr: COUNT(1) FILTER (WHERE is_pm_deferred)
+  comment: Preventive maintenance deferred/skipped.
+  display_name: PMs Deferred
+  synonyms:
+  - skipped PMs
+  - missed PMs
+- name: PM Compliance
+  expr: MEASURE(`PMs Completed`) / MEASURE(`PMs Due`)
+  comment: Completed PMs / PMs due. Corporate target 95%.
+  display_name: PM Compliance
+  synonyms:
+  - preventive maintenance compliance
+  - PM completion rate
+  format:
+    type: percentage
+    decimal_places:
+      type: max
+      places: 1
+- name: Breakdowns
+  expr: COUNT(1) FILTER (WHERE is_breakdown)
+  comment: Corrective + Emergency work orders (unplanned failures).
+  display_name: Breakdowns
+  synonyms:
+  - failures
+  - breakdown count
+  - unplanned work orders
+- name: Emergency Work Orders
+  expr: COUNT(1) FILTER (WHERE work_order_type = 'Emergency')
+  comment: Emergency work orders.
+  display_name: Emergency Work Orders
+  synonyms:
+  - emergencies
+- name: Repair Hours
+  expr: SUM(repair_hours) FILTER (WHERE is_breakdown)
+  comment: Elapsed hours from breakdown to repair completion.
+  display_name: Repair Hours
+  synonyms:
+  - time to repair
+- name: MTTR Hours
+  expr: MEASURE(`Repair Hours`) / MEASURE(`Breakdowns`)
+  comment: Mean time to repair, hours.
+  display_name: MTTR Hours
+  synonyms:
+  - mean time to repair
+  - MTTR
+- name: Labor Hours
+  expr: SUM(labor_hours)
+  comment: Technician labor hours.
+  display_name: Labor Hours
+  synonyms:
+  - wrench time
+  - man hours
+- name: Parts Cost USD
+  expr: SUM(parts_cost_usd)
+  comment: Spare parts cost, USD.
+  display_name: Parts Cost USD
+  synonyms:
+  - parts spend
+  format:
+    type: currency
+    currency_code: USD
+    decimal_places:
+      type: max
+      places: 0
+- name: Contractor Cost USD
+  expr: SUM(contractor_cost_usd)
+  comment: OEM field service / contractor cost, USD.
+  display_name: Contractor Cost USD
+  synonyms:
+  - field service cost
+  - vendor service cost
+  format:
+    type: currency
+    currency_code: USD
+    decimal_places:
+      type: max
+      places: 0
+- name: Total Maintenance Cost USD
+  expr: SUM(total_cost_usd)
+  comment: Parts + contractor cost, USD.
+  display_name: Total Maintenance Cost USD
+  synonyms:
+  - maintenance cost
+  - maintenance spend
+  format:
+    type: currency
+    currency_code: USD
+    decimal_places:
+      type: max
+      places: 0
+- name: Reactive Maintenance Ratio
+  expr: MEASURE(`Breakdowns`) / MEASURE(`Work Orders`)
+  comment: Share of work orders that are reactive (breakdowns).
+  display_name: Reactive Maintenance Ratio
+  synonyms:
+  - reactive ratio
+  format:
+    type: percentage
+    decimal_places:
+      type: max
+      places: 1

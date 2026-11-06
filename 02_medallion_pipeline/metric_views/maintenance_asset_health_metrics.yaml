@@ -1,0 +1,177 @@
+# Metric view: maintenance_asset_health_metrics   (Genie space: maintenance)
+# Deployed by 02_create_metric_views as {catalog}.{gold_schema}.maintenance_asset_health_metrics
+# {catalog} / {gold_schema} are filled in from config/demo_config.yml.
+version: 1.1
+source: '{catalog}.{gold_schema}.fact_machine_health_daily'
+comment: 'Condition-monitoring KPIs per machine per day from the IoT historian: vibration, temperature, running/down hours, hours above the 4.5 mm/s OEM/ISO 10816 limit, breakdowns and MTBF.'
+dimensions:
+- name: Reading Date
+  expr: reading_date
+  comment: Calendar date of the reading.
+  display_name: Reading Date
+  synonyms:
+  - reading day
+  - date
+- name: Reading Month
+  expr: reading_month
+  comment: First day of the calendar month of the reading.
+  display_name: Reading Month
+  synonyms:
+  - month
+- name: Fiscal Quarter
+  expr: fiscal_quarter
+  comment: 'KK''s Parts fiscal quarter, e.g. ''FY26 Q3''. Fiscal year starts Oct 1: Q1 Oct-Dec, Q2 Jan-Mar, Q3 Apr-Jun, Q4 Jul-Sep.'
+  display_name: Fiscal Quarter
+  synonyms:
+  - quarter
+  - fiscal period
+  - FQ
+- name: Plant ID
+  expr: plant_id
+  comment: 'Plant code: CLB Columbus, GVL Greenville, MTY Monterrey, WRO Wroclaw, PNQ Pune.'
+  display_name: Plant ID
+  synonyms:
+  - site code
+  - plant code
+- name: Plant Name
+  expr: plant_name
+  comment: Plant name, e.g. 'Greenville Drivetrain Plant'.
+  display_name: Plant Name
+  synonyms:
+  - plant
+  - site
+  - factory
+  - facility
+- name: Line ID
+  expr: line_id
+  comment: Production line code, e.g. GVL-L3.
+  display_name: Line ID
+  synonyms:
+  - line code
+- name: Line Name
+  expr: line_name
+  comment: Production line name, e.g. 'Gearbox Assembly'.
+  display_name: Line Name
+  synonyms:
+  - line
+  - production line
+  - cell
+- name: Machine ID
+  expr: machine_id
+  comment: Work center / machine code '<LINE>-WC<nn>', e.g. GVL-L3-WC01.
+  display_name: Machine ID
+  synonyms:
+  - work center
+  - asset
+  - asset id
+  - equipment id
+- name: Machine Name
+  expr: machine_name
+  comment: 'Machine name, e.g. ''CNC Horizontal Machining Center #1''.'
+  display_name: Machine Name
+  synonyms:
+  - machine
+  - equipment
+  - asset name
+- name: Machine Type
+  expr: machine_type
+  comment: Machine type code, e.g. CNC_MACHINING_CENTER, CRIMP_PRESS.
+  display_name: Machine Type
+  synonyms:
+  - equipment type
+  - asset class
+- name: Criticality
+  expr: criticality
+  comment: 'Asset criticality: A = bottleneck/no redundancy, B, C.'
+  display_name: Criticality
+  synonyms:
+  - asset criticality
+  - criticality class
+- name: OEM
+  expr: oem
+  comment: Machine manufacturer.
+  display_name: OEM
+  synonyms:
+  - manufacturer
+  - machine builder
+measures:
+- name: Average Vibration mm/s
+  expr: SUM(avg_vibration_mm_s * running_hours) / NULLIF(SUM(running_hours), 0)
+  comment: Average running vibration velocity (RMS, mm/s). Hartwell OEM limit for spindle bearing replacement is 4.5 mm/s.
+  display_name: Average Vibration mm/s
+  synonyms:
+  - vibration
+  - avg vibration
+  - vibration level
+- name: Max Vibration mm/s
+  expr: MAX(max_vibration_mm_s)
+  comment: Peak running vibration, mm/s.
+  display_name: Max Vibration mm/s
+  synonyms:
+  - peak vibration
+- name: Average Temperature C
+  expr: SUM(avg_temperature_c * running_hours) / NULLIF(SUM(running_hours), 0)
+  comment: Average running temperature, deg C.
+  display_name: Average Temperature C
+  synonyms:
+  - temperature
+  - avg temp
+- name: Max Temperature C
+  expr: MAX(max_temperature_c)
+  comment: Peak running temperature, deg C.
+  display_name: Max Temperature C
+  synonyms:
+  - peak temperature
+- name: Running Hours
+  expr: SUM(running_hours)
+  comment: Hours the machine was running.
+  display_name: Running Hours
+  synonyms:
+  - run hours
+  - operating hours
+- name: Down Hours
+  expr: SUM(down_hours)
+  comment: Hours the machine was down (failed or in maintenance).
+  display_name: Down Hours
+  synonyms:
+  - machine downtime hours
+- name: Hours Above 4.5 mm/s
+  expr: SUM(hours_above_4_5_mm_s)
+  comment: Running hours with vibration above 4.5 mm/s (OEM replace limit / ISO 10816 zone C-D).
+  display_name: Hours Above 4.5 mm/s
+  synonyms:
+  - hours over vibration limit
+  - vibration exceedance hours
+  - alarm hours
+- name: Breakdowns
+  expr: SUM(breakdowns)
+  comment: Breakdowns (corrective/emergency WOs) started.
+  display_name: Breakdowns
+  synonyms:
+  - failures
+- name: MTBF Hours
+  expr: MEASURE(`Running Hours`) / NULLIF(MEASURE(`Breakdowns`), 0)
+  comment: Mean time between failures = running hours / breakdowns.
+  display_name: MTBF Hours
+  synonyms:
+  - mean time between failures
+  - MTBF
+- name: Machine Availability
+  expr: MEASURE(`Running Hours`) / NULLIF(MEASURE(`Running Hours`) + MEASURE(`Down Hours`), 0)
+  comment: Running / (running + down) hours.
+  display_name: Machine Availability
+  synonyms:
+  - asset availability
+  - uptime
+  format:
+    type: percentage
+    decimal_places:
+      type: max
+      places: 1
+- name: Energy kWh
+  expr: SUM(energy_kwh)
+  comment: Energy consumed, kWh.
+  display_name: Energy kWh
+  synonyms:
+  - power consumption
+  - electricity

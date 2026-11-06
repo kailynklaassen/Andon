@@ -1,0 +1,278 @@
+# Metric view: production_oee_metrics   (Genie space: production)
+# Deployed by 02_create_metric_views as {catalog}.{gold_schema}.production_oee_metrics
+# {catalog} / {gold_schema} are filled in from config/demo_config.yml.
+version: 1.1
+source: '{catalog}.{gold_schema}.fact_shift_production'
+comment: Production & OEE KPIs at line-shift grain for KK's Parts. OEE = Availability x Performance x Quality. Use for output, OEE, scrap, and downtime-minutes-by-reason questions by plant,
+  line, shift, part, and period.
+dimensions:
+- name: Production Date
+  expr: production_date
+  comment: Calendar date of the production.
+  display_name: Production Date
+  synonyms:
+  - production day
+  - date
+- name: Production Month
+  expr: production_month
+  comment: First day of the calendar month of the production.
+  display_name: Production Month
+  synonyms:
+  - month
+- name: Fiscal Quarter
+  expr: fiscal_quarter
+  comment: 'KK''s Parts fiscal quarter, e.g. ''FY26 Q3''. Fiscal year starts Oct 1: Q1 Oct-Dec, Q2 Jan-Mar, Q3 Apr-Jun, Q4 Jul-Sep.'
+  display_name: Fiscal Quarter
+  synonyms:
+  - quarter
+  - fiscal period
+  - FQ
+- name: Shift
+  expr: shift
+  comment: 'Shift: A 06:00-14:00, B 14:00-22:00, C 22:00-06:00 (night).'
+  display_name: Shift
+  synonyms:
+  - crew
+  - shift code
+- name: Plant ID
+  expr: plant_id
+  comment: 'Plant code: CLB Columbus, GVL Greenville, MTY Monterrey, WRO Wroclaw, PNQ Pune.'
+  display_name: Plant ID
+  synonyms:
+  - site code
+  - plant code
+- name: Plant Name
+  expr: plant_name
+  comment: Plant name, e.g. 'Greenville Drivetrain Plant'.
+  display_name: Plant Name
+  synonyms:
+  - plant
+  - site
+  - factory
+  - facility
+- name: Region
+  expr: region
+  comment: 'Plant region: North America, Europe, Asia Pacific.'
+  display_name: Region
+  synonyms:
+  - geography
+- name: Product Family
+  expr: product_family
+  comment: Product family made at the plant, e.g. 'Gears & Drivetrain'.
+  display_name: Product Family
+  synonyms:
+  - product line
+  - family
+- name: Line ID
+  expr: line_id
+  comment: Production line code, e.g. GVL-L3.
+  display_name: Line ID
+  synonyms:
+  - line code
+- name: Line Name
+  expr: line_name
+  comment: Production line name, e.g. 'Gearbox Assembly'.
+  display_name: Line Name
+  synonyms:
+  - line
+  - production line
+  - cell
+- name: Part Number
+  expr: part_number
+  comment: Finished-good part number being produced.
+  display_name: Part Number
+  synonyms:
+  - part
+  - SKU
+  - item
+- name: Part Name
+  expr: part_name
+  comment: Finished-good part description.
+  display_name: Part Name
+  synonyms:
+  - product
+  - part description
+measures:
+- name: Shifts Run
+  expr: COUNT(1)
+  comment: Number of line-shifts scheduled.
+  display_name: Shifts Run
+  synonyms:
+  - shift count
+- name: Planned Minutes
+  expr: SUM(planned_minutes)
+  comment: Planned production time in minutes (450 per shift).
+  display_name: Planned Minutes
+- name: Run Minutes
+  expr: SUM(run_minutes)
+  comment: Minutes the line actually ran (planned minus downtime).
+  display_name: Run Minutes
+  synonyms:
+  - uptime minutes
+  - operating time
+- name: Downtime Minutes
+  expr: SUM(downtime_minutes)
+  comment: Minutes the line was stopped for any reason.
+  display_name: Downtime Minutes
+  synonyms:
+  - lost minutes
+- name: Downtime Hours
+  expr: SUM(downtime_minutes) / 60.0
+  comment: Hours the line was stopped for any reason.
+  display_name: Downtime Hours
+  synonyms:
+  - lost hours
+  - stoppage hours
+- name: Ideal Minutes
+  expr: SUM(ideal_minutes)
+  comment: Minutes the produced units would take at ideal cycle time.
+  display_name: Ideal Minutes
+- name: Total Units
+  expr: SUM(total_units)
+  comment: All units produced (good + scrap + rework).
+  display_name: Total Units
+  synonyms:
+  - output
+  - units produced
+  - throughput
+- name: Good Units
+  expr: SUM(good_units)
+  comment: Units that passed first time.
+  display_name: Good Units
+  synonyms:
+  - good output
+  - good parts
+- name: Scrap Units
+  expr: SUM(scrap_units)
+  comment: Units scrapped.
+  display_name: Scrap Units
+  synonyms:
+  - scrap
+  - rejects
+- name: Rework Units
+  expr: SUM(rework_units)
+  comment: Units sent to rework.
+  display_name: Rework Units
+- name: Availability
+  expr: MEASURE(`Run Minutes`) / MEASURE(`Planned Minutes`)
+  comment: OEE availability = run minutes / planned minutes.
+  display_name: Availability
+  synonyms:
+  - uptime %
+  - availability rate
+  format:
+    type: percentage
+    decimal_places:
+      type: max
+      places: 1
+- name: Performance
+  expr: MEASURE(`Ideal Minutes`) / MEASURE(`Run Minutes`)
+  comment: OEE performance = ideal minutes / run minutes (speed losses, minor stops).
+  display_name: Performance
+  synonyms:
+  - performance rate
+  - speed efficiency
+  format:
+    type: percentage
+    decimal_places:
+      type: max
+      places: 1
+- name: Quality Rate
+  expr: MEASURE(`Good Units`) / MEASURE(`Total Units`)
+  comment: OEE quality = good units / total units. Same as first pass yield (FPY).
+  display_name: Quality Rate
+  synonyms:
+  - first pass yield
+  - FPY
+  - yield
+  format:
+    type: percentage
+    decimal_places:
+      type: max
+      places: 1
+- name: OEE
+  expr: MEASURE(`Availability`) * MEASURE(`Performance`) * MEASURE(`Quality Rate`)
+  comment: Overall Equipment Effectiveness = Availability x Performance x Quality. Corporate target 85%.
+  display_name: OEE
+  synonyms:
+  - overall equipment effectiveness
+  - line efficiency
+  format:
+    type: percentage
+    decimal_places:
+      type: max
+      places: 1
+- name: Scrap Rate
+  expr: MEASURE(`Scrap Units`) / MEASURE(`Total Units`)
+  comment: Scrap units / total units.
+  display_name: Scrap Rate
+  synonyms:
+  - scrap %
+  format:
+    type: percentage
+    decimal_places:
+      type: max
+      places: 1
+- name: Scrap Cost USD
+  expr: SUM(scrap_cost_usd)
+  comment: Scrapped units valued at standard cost, USD.
+  display_name: Scrap Cost USD
+  synonyms:
+  - cost of scrap
+  format:
+    type: currency
+    currency_code: USD
+    decimal_places:
+      type: max
+      places: 0
+- name: Good Output Value USD
+  expr: SUM(good_output_value_usd)
+  comment: Good units valued at standard cost, USD.
+  display_name: Good Output Value USD
+  synonyms:
+  - production value
+  format:
+    type: currency
+    currency_code: USD
+    decimal_places:
+      type: max
+      places: 0
+- name: Equipment Failure Downtime Hours
+  expr: SUM(dt_equipment_failure_min) / 60.0
+  comment: Downtime hours coded Equipment Failure (breakdowns).
+  display_name: Equipment Failure Downtime Hours
+  synonyms:
+  - breakdown hours
+  - unplanned maintenance hours
+- name: Planned Maintenance Downtime Hours
+  expr: SUM(dt_planned_maintenance_min) / 60.0
+  comment: Downtime hours coded Planned Maintenance (PMs).
+  display_name: Planned Maintenance Downtime Hours
+  synonyms:
+  - PM hours
+- name: Changeover Downtime Hours
+  expr: SUM(dt_changeover_min) / 60.0
+  comment: Downtime hours coded Changeover.
+  display_name: Changeover Downtime Hours
+  synonyms:
+  - setup hours
+  - changeover hours
+- name: Material Shortage Downtime Hours
+  expr: SUM(dt_material_shortage_min) / 60.0
+  comment: Downtime hours coded Material Shortage (line starved of parts).
+  display_name: Material Shortage Downtime Hours
+  synonyms:
+  - starved hours
+  - shortage hours
+- name: Quality Hold Downtime Hours
+  expr: SUM(dt_quality_hold_min) / 60.0
+  comment: Downtime hours coded Quality Hold (containment).
+  display_name: Quality Hold Downtime Hours
+  synonyms:
+  - quality hold hours
+- name: No Operator Downtime Hours
+  expr: SUM(dt_no_operator_min) / 60.0
+  comment: Downtime hours coded No Operator (staffing).
+  display_name: No Operator Downtime Hours
+  synonyms:
+  - staffing downtime

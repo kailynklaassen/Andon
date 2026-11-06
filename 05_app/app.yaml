@@ -1,0 +1,45 @@
+# Databricks App: KK's Parts Andon (kkparts-andon)
+#
+# Resources (declared on the app: `databricks apps create` / `create-update`, see README "Deploy"):
+#   sql-warehouse        → CAN_USE                  gold-layer queries
+#   postgres             → CAN_CONNECT_AND_CREATE   Lakebase kkparts-hitl / production / databricks_postgres:
+#                                                   the human-in-the-loop ledger (PGHOST, PGDATABASE, PGUSER injected)
+#   sync-job             → CAN_MANAGE_RUN           kkparts-hitl-sync: the "Sync now" button on the Action Ledger
+# Unity Catalog: the app's service principal needs USE CATALOG / USE SCHEMA + SELECT on the gold schema
+# (06_human_in_the_loop/00_setup_hitl_sync grants it).
+# Foreman: the app's service principal needs CAN_USE on the agent app kkparts-foreman (it calls it with its own OAuth token).
+#
+# Deploy: Databricks Apps runs `npm install` + `npm run build` (React → frontend/dist), `pip install -r requirements.txt`,
+# then this command. FastAPI serves the API and the built front end on one origin.
+command:
+- uvicorn
+- backend.main:app
+- --host
+- 0.0.0.0
+- --port
+- '8000'
+env:
+- name: DATABRICKS_WAREHOUSE_ID
+  valueFrom: sql-warehouse
+- name: KK_FOREMAN_URL
+  value: https://<foreman-app-url>   # rendered by 00_deploy_app
+- name: KK_SYNC_JOB_ID
+  valueFrom: sync-job
+- name: KK_LAKEBASE_ENDPOINT
+  value: projects/kkparts-hitl/branches/production/endpoints/primary
+- name: KK_HITL_SCHEMA
+  value: andon
+- name: KK_CATALOG
+  value: your_catalog
+- name: KK_GOLD_SCHEMA
+  value: mfg_gold
+- name: KK_BRONZE_SCHEMA
+  value: mfg_bronze
+- name: KK_DATA_MODE
+  value: live
+- name: KK_AGENT_MODE
+  value: live
+- name: KK_DASHBOARD_EMBED_URL
+  value: ''
+- name: KK_ADMINS
+  value: you@example.com

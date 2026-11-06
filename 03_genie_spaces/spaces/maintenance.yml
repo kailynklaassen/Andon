@@ -1,0 +1,195 @@
+# =============================================================================
+# Genie space: Maintenance & Reliability
+# =============================================================================
+key: maintenance
+title: KK's Parts Maintenance & Reliability
+description: >-
+  Asset reliability and maintenance for KK's Parts' 70 machines (FY2026:
+  Oct 2025 - Sep 2026): CMMS work orders (Preventive, Corrective, Emergency), PM compliance and
+  deferrals, breakdowns, MTTR, MTBF, failure modes, labor/parts/contractor cost, and IoT
+  condition monitoring (vibration mm/s, temperature, running/down hours, hours above the 4.5 mm/s
+  limit) by plant, line, machine, OEM, criticality and period. Also answers from maintenance
+  documents: Hartwell OEM service manual (vibration limits), KK's Parts PM procedure PM-CNC-030,
+  root cause analyses, field service reports, management-of-change requests, PM compliance policy,
+  criticality and vibration monitoring standards. Not for OEE/output, NCRs/CAPAs, or suppliers/shipments.
+
+# Documents: the genie_docs_maintenance volume, attached to the space (Agent-mode file search). Approved notes: the
+# app_notes_maintenance volume (one NOTE-<id>.md per approved note, written by the sync job).
+sql_functions: []
+
+metric_views:
+  - maintenance_work_order_metrics
+  - maintenance_asset_health_metrics
+
+tables:
+  - name: fact_maintenance_work_order
+    column_configs:
+      - { column_name: work_order_type, enable_entity_matching: true, synonyms: [WO type, maintenance type] }
+      - { column_name: failure_mode, enable_entity_matching: true, enable_format_assistance: true, synonyms: [failure, fault, cause] }
+      - { column_name: status, enable_entity_matching: true }
+      - { column_name: oem, enable_entity_matching: true, synonyms: [manufacturer, machine builder] }
+      - { column_name: machine_name, enable_entity_matching: true }
+      - { column_name: plant_name, enable_entity_matching: true }
+      - { column_name: technician_id, exclude: true }
+  - name: fact_machine_health_daily
+    column_configs:
+      - { column_name: machine_id, enable_format_assistance: true, synonyms: [work center, asset] }
+      - { column_name: machine_name, enable_entity_matching: true }
+      - { column_name: oem, enable_entity_matching: true }
+      - { column_name: hours_above_4_5_mm_s, description: ["Running hours with vibration above 4.5 mm/s - the Hartwell OEM spindle-bearing replacement limit and ISO 10816 zone C/D boundary."] }
+  - name: dim_work_center
+    column_configs:
+      - { column_name: machine_name, enable_entity_matching: true }
+      - { column_name: criticality, enable_entity_matching: true, description: ["A = bottleneck / no redundancy, B = important, C = redundant or low impact."] }
+      - { column_name: latitude, exclude: true }
+      - { column_name: longitude, exclude: true }
+
+join_specs:
+  - { left: fact_maintenance_work_order, right: dim_work_center, condition: "`fact_maintenance_work_order`.`machine_id` = `dim_work_center`.`machine_id`", rt: MANY_TO_ONE }
+  - { left: fact_machine_health_daily, right: dim_work_center, condition: "`fact_machine_health_daily`.`machine_id` = `dim_work_center`.`machine_id`", rt: MANY_TO_ONE }
+
+sql_snippets:
+  filters:
+    - { display_name: Breakdowns only, sql: "fact_maintenance_work_order.is_breakdown = true", synonyms: [failures, unplanned work orders, reactive maintenance] }
+    - { display_name: Deferred PMs, sql: "fact_maintenance_work_order.is_pm_deferred = true", synonyms: [skipped PMs, missed PMs] }
+    - { display_name: Criticality A assets, sql: "dim_work_center.criticality = 'A'", synonyms: [critical machines, bottleneck assets] }
+    - { display_name: Last 30 days of data, sql: "fact_machine_health_daily.reading_date > DATE'2026-08-31'", synonyms: [recent, last month] }
+
+example_sqls:
+  - question: What is PM compliance by plant?
+    sql: |
+      SELECT `Plant Name`, MEASURE(`PM Compliance`) AS pm_compliance, MEASURE(`PMs Due`) AS pms_due, MEASURE(`PMs Deferred`) AS pms_deferred
+      FROM {G}.maintenance_work_order_metrics
+      GROUP BY ALL ORDER BY pm_compliance
+  - question: Which machines had the most breakdowns and highest maintenance cost?
+    sql: |
+      SELECT `Machine ID`, `Machine Name`, `OEM`, `Criticality`,
+             MEASURE(`Breakdowns`) AS breakdowns, MEASURE(`MTTR Hours`) AS mttr_hours,
+             MEASURE(`Contractor Cost USD`) AS contractor_usd, MEASURE(`Total Maintenance Cost USD`) AS total_cost_usd
+      FROM {G}.maintenance_work_order_metrics
+      GROUP BY ALL ORDER BY breakdowns DESC LIMIT 10
+  - question: Show the monthly vibration trend for machine GVL-L3-WC01
+    sql: |
+      SELECT `Reading Month`, MEASURE(`Average Vibration mm/s`) AS avg_vibration, MEASURE(`Max Vibration mm/s`) AS max_vibration,
+             MEASURE(`Hours Above 4.5 mm/s`) AS hours_above_limit, MEASURE(`Breakdowns`) AS breakdowns
+      FROM {G}.maintenance_asset_health_metrics
+      WHERE `Machine ID` = 'GVL-L3-WC01'
+      GROUP BY ALL ORDER BY `Reading Month`
+  - question: Which Hartwell machining centers' monthly average vibration has exceeded the 4.5 mm/s OEM limit, and in which month did that first happen?
+    usage_guidance: A limit is crossed when the MONTHLY AVERAGE running vibration exceeds it; single-day or maximum readings spike and do not count. The 4.5 mm/s limit is Hartwell's for its HMCs — other machine types (cold headers, presses, shot blast) normally run at higher vibration.
+    sql: |
+      SELECT `Machine ID`, `Machine Name`, MIN(`Reading Month`) AS first_month_above_4_5
+      FROM (SELECT `Machine ID`, `Machine Name`, `Reading Month`, MEASURE(`Average Vibration mm/s`) AS avg_vibration
+            FROM {G}.maintenance_asset_health_metrics WHERE `OEM` = 'Hartwell Machine Tools' GROUP BY ALL)
+      WHERE avg_vibration > 4.5
+      GROUP BY ALL ORDER BY first_month_above_4_5
+  - question: Which machines are running above the 4.5 mm/s vibration limit recently?
+    sql: |
+      SELECT `Machine ID`, `Machine Name`, `Line Name`, `OEM`,
+             MEASURE(`Hours Above 4.5 mm/s`) AS hours_above_limit, MEASURE(`Average Vibration mm/s`) AS avg_vibration
+      FROM {G}.maintenance_asset_health_metrics
+      WHERE `Reading Date` > DATE'2026-08-31'
+      GROUP BY ALL HAVING hours_above_limit > 0 ORDER BY hours_above_limit DESC
+  - question: What are the top failure modes by repair hours?
+    sql: |
+      SELECT `Failure Mode`, MEASURE(`Breakdowns`) AS breakdowns, MEASURE(`Repair Hours`) AS repair_hours, MEASURE(`MTTR Hours`) AS mttr_hours
+      FROM {G}.maintenance_work_order_metrics
+      WHERE `Failure Mode` IS NOT NULL
+      GROUP BY ALL ORDER BY repair_hours DESC
+  - question: Compare MTBF by plant
+    sql: |
+      SELECT `Plant Name`, MEASURE(`MTBF Hours`) AS mtbf_hours, MEASURE(`Machine Availability`) AS availability
+      FROM {G}.maintenance_asset_health_metrics
+      GROUP BY ALL ORDER BY mtbf_hours
+  - question: List the deferred PMs on Greenville Gearbox Assembly
+    sql: |
+      SELECT work_order_id, machine_id, machine_name, pm_due_date, status, description
+      FROM {G}.fact_maintenance_work_order
+      WHERE line_id = 'GVL-L3' AND is_pm_deferred
+      ORDER BY pm_due_date
+
+text_instructions: |
+  ## PURPOSE
+  - Reliability analytics for maintenance managers, reliability engineers and the Director of Reliability & Maintenance.
+  - Domain documents (OEM-HMT-HMC-SM7, PM-CNC-030, RCA-2026-GVL-007, FSR-HMT-2026-0412, MOC-2026-031, POL-MNT-001, STD-MNT-004, STD-MNT-010, MEMO-REL-2026-09, GLS-MNT-001) are attached to this space as files — Agent mode searches them. They define limits, procedures, root causes and decisions. Search them for "what is the limit/procedure/policy", "why did it fail" and "what was recommended" questions, and cite the document ID.
+
+  ## DISAMBIGUATION
+  - Data covers 2025-10-01 to 2026-09-30. "Recent", "current" and "this month" are relative to 2026-09-30.
+  - "Q1-Q4" are fiscal quarters (FY starts Oct 1).
+  - Plants: CLB = Columbus Hydraulics Plant, GVL = Greenville Drivetrain Plant, MTY = Monterrey Machining Plant, WRO = Wroclaw Electrical Plant, PNQ = Pune Fastener Plant. Filter plants on Plant ID, never on a guessed plant name.
+  - "Vibration" means running vibration velocity in mm/s RMS.
+  - Whether a machine "crossed" or "exceeded" a vibration limit is judged on its average running vibration (daily or monthly average), never on single maximum readings, which spike briefly. A machine crosses a limit in the first MONTH whose average running vibration is above it. Use Hours Above 4.5 mm/s for sustained exposure.
+  - Use the metric view measures (Breakdowns, Repair Hours, Contractor Cost USD, ...) rather than summing raw table columns: Repair Hours counts breakdown repairs only, while the raw column also includes PM labour.
+  - Spare parts, lead times, quotes, recommendations, procedures and limits are only in the documents — always search the attached documents for them instead of answering "no data".
+
+  ## APPROVED APP NOTES (human decisions and context)
+  - Documents (procedures, contracts, manuals, reports, meeting reviews and minutes) and approved app notes are attached to this space as files. Never answer that documents, minutes or notes are unavailable, or ask for search to be enabled — search the attached files.
+  - Approved app notes are the files named NOTE-<id>.md: decisions and context people added in the Andon app and a reviewer approved. They are the most recent knowledge you have and can change what the right answer is. Each one states its priority (P1, P2 or P3), what it is about, who approved it and when.
+  - Search the approved notes for every question about a specific plant, line, machine, supplier, carrier, customer or CAPA, and for "what should we do / what was decided" questions (meetings, reviews) — in addition to the data and the documents.
+  - Weigh each relevant note by its priority:
+    - P1 = an approved decision or override. Lead with it, and let it change the conclusion: it supersedes an older recommendation in a document (say so, e.g. "PRP-SC-2026-04 recommended X; NOTE-… (P1, approved by … on …) decided Y").
+    - P2 = important context. Include it next to the numbers it explains.
+    - P3 = for information. Mention it only when it is directly relevant to the question.
+  - Always cite the note ID (NOTE-…), its priority, who approved it and when. A note never replaces a number from the data: give the data, then what people decided.
+
+  ## Instructions you must follow when providing summaries
+  - Compare vibration to the Hartwell OEM limit of 4.5 mm/s and note that KK's Parts' PM-CNC-030 still uses 7.1 mm/s when relevant.
+  - Compare PM compliance to the 95% corporate target. Show costs in USD.
+  - When a number and a document both apply, give the number first, then the document context with its ID.
+
+sample_questions:
+  - Which machines are trending toward failure based on vibration?
+  - Why does GVL-L3-WC01 keep breaking down?
+  - What vibration limit does the Hartwell manual give for spindle bearing replacement?
+  - How does Greenville's PM compliance compare to Columbus?
+  - How much have we spent on Hartwell field service this year?
+
+benchmarks:                       # narrative-grounded checks (fact = expected answer per NARRATIVE_BIBLE / data)
+  - question: How many breakdowns did GVL-L3-WC01 have since 2026-03-15?
+    fact: '30'
+    sql: |
+      SELECT MEASURE(`Breakdowns`) AS breakdowns FROM {G}.maintenance_work_order_metrics WHERE `Machine ID` = 'GVL-L3-WC01' AND `Created Date` >= DATE'2026-03-15'
+  - question: PM compliance for the Greenville plant
+    fact: 80.6%
+    sql: |
+      SELECT MEASURE(`PM Compliance`) AS pm_compliance FROM {G}.maintenance_work_order_metrics WHERE `Plant ID` = 'GVL'
+  - question: Which production line has the lowest PM compliance in FY26?
+    fact: GVL-L3 76.7%
+    sql: |
+      SELECT pm_compliance FROM (SELECT `Line ID`, MEASURE(`PM Compliance`) AS pm_compliance FROM {G}.maintenance_work_order_metrics GROUP BY ALL) ORDER BY pm_compliance ASC LIMIT 1
+  - question: Which plant has the best PM compliance in FY26?
+    fact: Wroclaw 97.9%
+    sql: |
+      SELECT `Plant Name`, MEASURE(`PM Compliance`) AS pm_compliance FROM {G}.maintenance_work_order_metrics GROUP BY ALL ORDER BY pm_compliance DESC LIMIT 1
+  - question: Show the average vibration by month for GVL-L3-WC01 from April to September 2026.
+    fact: 3.44 · 4.39 · 5.23 · 6.46 · 7.57 · 8.75 mm/s
+    sql: |
+      SELECT `Reading Month`, MEASURE(`Average Vibration mm/s`) AS vib FROM {G}.maintenance_asset_health_metrics WHERE `Machine ID` = 'GVL-L3-WC01' AND `Reading Month` BETWEEN DATE'2026-04-01' AND DATE'2026-09-01' GROUP BY ALL ORDER BY 1
+  - question: In which month did GVL-L3-WC01's average vibration first exceed 4.5 mm/s?
+    fact: June 2026
+    sql: |
+      SELECT `Reading Month`, MEASURE(`Average Vibration mm/s`) AS vib FROM {G}.maintenance_asset_health_metrics WHERE `Machine ID` = 'GVL-L3-WC01' GROUP BY ALL HAVING vib > 4.5 ORDER BY 1 LIMIT 1
+  - question: How many repair hours were spent on GVL-L3-WC01 since March 15, 2026?
+    fact: ≈ 286 hours
+    sql: |
+      SELECT MEASURE(`Repair Hours`) AS repair_hours FROM {G}.maintenance_work_order_metrics WHERE `Machine ID` = 'GVL-L3-WC01' AND `Created Date` >= DATE'2026-03-15'
+  - question: What was the contractor cost for GVL-L3-WC01 since March 15, 2026?
+    fact: ≈ $146K (Hartwell field service)
+    sql: |
+      SELECT MEASURE(`Contractor Cost USD`) AS contractor_cost FROM {G}.maintenance_work_order_metrics WHERE `Machine ID` = 'GVL-L3-WC01' AND `Created Date` >= DATE'2026-03-15'
+  - question: Which plant had the most breakdowns in FY26?
+    fact: Greenville, 83
+    sql: |
+      SELECT `Plant Name`, MEASURE(`Breakdowns`) AS breakdowns FROM {G}.maintenance_work_order_metrics GROUP BY ALL ORDER BY breakdowns DESC LIMIT 1
+  - question: How many preventive maintenance work orders were deferred on GVL-L3-WC01 in FY26?
+    fact: 2 (due 2026-06-27 and 2026-09-04)
+    sql: |
+      SELECT MEASURE(`PMs Deferred`) AS deferred FROM {G}.maintenance_work_order_metrics WHERE `Machine ID` = 'GVL-L3-WC01'
+  - question: Compare breakdowns at Greenville and Columbus in FY26.
+    fact: GVL 83 vs CLB 48
+    sql: |
+      SELECT `Plant Name`, MEASURE(`Breakdowns`) AS breakdowns FROM {G}.maintenance_work_order_metrics WHERE `Plant ID` IN ('GVL', 'CLB') GROUP BY ALL ORDER BY 1
+  - question: What vibration level does the Hartwell OEM service manual say requires replacing the spindle bearings?
+    fact: 4.5 mm/s (OEM-HMT-HMC-SM7)
+    expect_doc: OEM-HMT-HMC-SM7
+

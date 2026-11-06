@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+/tmp/
+04_supervisor_agent/agent/supervisor_config.yaml
+
+# app: local human-in-the-loop ledger
+05_app/data/actions.jsonl
+supervisor_config.yaml
+.env

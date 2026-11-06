@@ -1,0 +1,209 @@
+# =============================================================================
+# Genie space: Production & OEE
+# =============================================================================
+# Built by 03_genie_spaces/01_create_genie_spaces. {G} = <catalog>.<gold_schema>.
+# Best-practice order (most governed first):
+#   description -> metric views -> focused tables -> column configs -> join specs
+#   -> SQL snippets -> example SQL -> text instructions (last resort) -> samples/benchmarks
+# =============================================================================
+key: production
+title: KK's Parts Production & OEE
+# The description is what the SUPERVISOR reads to decide whether to route here.
+# Keep it specific about scope AND about what is out of scope.
+description: >-
+  Production performance for KK's Parts' 5 plants and 15 production lines
+  (FY2026: Oct 2025 - Sep 2026): OEE and its components (availability, performance, quality),
+  output and good units, scrap and rework, downtime minutes by MES reason code
+  (Equipment Failure, Planned Maintenance, Changeover, Material Shortage, Quality Hold, No Operator),
+  by plant, line, machine, shift and fiscal period. Also answers from production documents:
+  OEE standard, changeover standard work, shift handover/escalation matrix, scheduling policy,
+  plant process-flow reference, monthly/quarterly operations reviews and line-stop reports.
+  Not for maintenance work orders/vibration, quality NCRs/CAPAs, or suppliers/shipments.
+
+# Documents: the genie_docs_production volume, attached to the space (Agent-mode file search). Approved notes: the
+# app_notes_production volume (one NOTE-<id>.md per approved note, written by the sync job).
+sql_functions: []
+
+metric_views:
+  - production_oee_metrics
+  - production_downtime_metrics
+
+tables:
+  - name: fact_shift_production
+    column_configs:
+      - { column_name: plant_name, enable_entity_matching: true, enable_format_assistance: true, synonyms: [plant, site, factory] }
+      - { column_name: line_name, enable_entity_matching: true, enable_format_assistance: true, synonyms: [line, production line] }
+      - { column_name: line_id, enable_format_assistance: true }
+      - { column_name: shift, enable_entity_matching: true, description: ["A = 06:00-14:00, B = 14:00-22:00, C = 22:00-06:00 (night shift)."], synonyms: [crew] }
+      - { column_name: fiscal_quarter, enable_entity_matching: true, description: ["Fiscal quarter like 'FY26 Q3'. FY starts Oct 1."] }
+      - { column_name: part_name, enable_entity_matching: true }
+      - { column_name: shift_result_id, exclude: true }
+  - name: fact_downtime_event
+    column_configs:
+      - { column_name: reason_category, enable_entity_matching: true, enable_format_assistance: true, synonyms: [downtime reason, stop reason, reason code] }
+      - { column_name: machine_name, enable_entity_matching: true }
+      - { column_name: machine_id, enable_format_assistance: true, synonyms: [work center, asset] }
+      - { column_name: plant_name, enable_entity_matching: true }
+      - { column_name: line_name, enable_entity_matching: true }
+      - { column_name: reported_by, exclude: true }
+  - name: dim_production_line
+  - name: dim_work_center
+    column_configs:
+      - { column_name: machine_name, enable_entity_matching: true }
+      - { column_name: oem, enable_entity_matching: true, synonyms: [manufacturer, machine builder] }
+      - { column_name: latitude, exclude: true }
+      - { column_name: longitude, exclude: true }
+      - { column_name: serial_number, exclude: true }
+  - name: dim_plant
+
+join_specs:
+  - { left: fact_shift_production, right: dim_production_line, condition: "`fact_shift_production`.`line_id` = `dim_production_line`.`line_id`", rt: MANY_TO_ONE }
+  - { left: fact_downtime_event, right: dim_work_center, condition: "`fact_downtime_event`.`machine_id` = `dim_work_center`.`machine_id`", rt: MANY_TO_ONE }
+  - { left: dim_production_line, right: dim_plant, condition: "`dim_production_line`.`plant_id` = `dim_plant`.`plant_id`", rt: MANY_TO_ONE }
+
+sql_snippets:
+  filters:
+    - { display_name: Night shift, sql: "fact_shift_production.shift = 'C'", synonyms: [C shift, third shift, overnight] }
+    - { display_name: Latest month (Sep 2026), sql: "fact_shift_production.production_month = DATE'2026-09-01'", synonyms: [this month, last month of data, current month] }
+    - { display_name: Unplanned downtime, sql: "fact_downtime_event.is_unplanned = true", synonyms: [unplanned stops, unscheduled downtime] }
+
+example_sqls:
+  - question: What is OEE by plant for each fiscal quarter?
+    usage_guidance: Governed OEE comes from the metric view via MEASURE(); never average per-row ratios.
+    sql: |
+      SELECT `Plant Name`, `Fiscal Quarter`,
+             MEASURE(`OEE`) AS oee, MEASURE(`Availability`) AS availability,
+             MEASURE(`Performance`) AS performance, MEASURE(`Quality Rate`) AS quality
+      FROM {G}.production_oee_metrics
+      GROUP BY ALL ORDER BY `Plant Name`, `Fiscal Quarter`
+  - question: Which lines lost the most OEE between FY26 Q2 and FY26 Q4?
+    usage_guidance: Compute the measure per period in a CTE, then compare periods in the outer query (measures cannot go inside CASE).
+    sql: |
+      WITH q AS (
+        SELECT `Line ID`, `Line Name`, `Fiscal Quarter`, MEASURE(`OEE`) AS oee
+        FROM {G}.production_oee_metrics
+        WHERE `Fiscal Quarter` IN ('FY26 Q2', 'FY26 Q4')
+        GROUP BY ALL)
+      SELECT `Line ID`, `Line Name`,
+             MAX(CASE WHEN `Fiscal Quarter` = 'FY26 Q2' THEN oee END) AS oee_q2,
+             MAX(CASE WHEN `Fiscal Quarter` = 'FY26 Q4' THEN oee END) AS oee_q4,
+             MAX(CASE WHEN `Fiscal Quarter` = 'FY26 Q4' THEN oee END) - MAX(CASE WHEN `Fiscal Quarter` = 'FY26 Q2' THEN oee END) AS change
+      FROM q GROUP BY ALL ORDER BY change ASC LIMIT 10
+  - question: Show the monthly OEE trend for Gearbox Assembly at Greenville
+    sql: |
+      SELECT `Production Month`, MEASURE(`OEE`) AS oee, MEASURE(`Good Units`) AS good_units,
+             MEASURE(`Equipment Failure Downtime Hours`) AS breakdown_hours
+      FROM {G}.production_oee_metrics
+      WHERE `Line ID` = 'GVL-L3'
+      GROUP BY ALL ORDER BY `Production Month`
+  - question: What are the top downtime reasons at Monterrey this fiscal year?
+    sql: |
+      SELECT `Reason Category`, MEASURE(`Downtime Events`) AS events, MEASURE(`Downtime Hours`) AS hours
+      FROM {G}.production_downtime_metrics
+      WHERE `Plant ID` = 'MTY'
+      GROUP BY ALL ORDER BY hours DESC
+  - question: Which machines caused the most breakdown downtime?
+    sql: |
+      SELECT `Machine ID`, `Machine Name`, `Line Name`, `Plant Name`,
+             MEASURE(`Equipment Failure Events`) AS breakdowns, MEASURE(`Downtime Hours`) AS hours
+      FROM {G}.production_downtime_metrics
+      WHERE `Reason Category` = 'Equipment Failure'
+      GROUP BY ALL ORDER BY hours DESC LIMIT 10
+  - question: Compare scrap rate by shift for each line
+    sql: |
+      SELECT `Line ID`, `Shift`, MEASURE(`Scrap Rate`) AS scrap_rate, MEASURE(`Total Units`) AS units
+      FROM {G}.production_oee_metrics
+      GROUP BY ALL ORDER BY `Line ID`, `Shift`
+  - question: List the longest downtime events on GVL-L3 in September 2026
+    usage_guidance: Event-level detail comes from the fact table, not the metric view.
+    sql: |
+      SELECT downtime_event_id, start_ts, end_ts, ROUND(duration_hours, 1) AS hours, machine_id, reason_category, reason_detail, related_work_order_id
+      FROM {G}.fact_downtime_event
+      WHERE line_id = 'GVL-L3' AND event_month = DATE'2026-09-01'
+      ORDER BY duration_hours DESC LIMIT 20
+
+text_instructions: |
+  ## PURPOSE
+  - Production analytics for KK's Parts plant managers, production supervisors and operations leaders.
+  - Domain documents (SOP-PRD-*, PLN-PRD-003, PFD-ALL-001, RPT-*, LSR-*, CS-CLB-*, GLS-PRD-001) are attached to this space as files — Agent mode searches them. They explain standards, targets, process flows and the story behind the numbers. Search them for "why", "what is the standard/target/procedure" and "who/what was decided" questions, and cite the document ID.
+
+  ## DISAMBIGUATION
+  - Data covers 2025-10-01 to 2026-09-30. "Current", "latest", "this month" and "recent" mean relative to 2026-09-30, not today's date.
+  - "Q1-Q4" means KK's Parts fiscal quarters (fiscal year starts Oct 1) unless the user says calendar quarter.
+  - Plants: CLB = Columbus Hydraulics Plant, GVL = Greenville Drivetrain Plant, MTY = Monterrey Machining Plant, WRO = Wroclaw Electrical Plant, PNQ = Pune Fastener Plant. Filter plants on Plant ID, never on a guessed plant name.
+  - "Yield" or "FPY" means the Quality Rate measure.
+
+  ## DATA QUALITY NOTES
+  - Downtime by reason in the OEE view is attributed to shifts; event counts come from the downtime view.
+
+  ## APPROVED APP NOTES (human decisions and context)
+  - Documents (procedures, contracts, manuals, reports, meeting reviews and minutes) and approved app notes are attached to this space as files. Never answer that documents, minutes or notes are unavailable, or ask for search to be enabled — search the attached files.
+  - Approved app notes are the files named NOTE-<id>.md: decisions and context people added in the Andon app and a reviewer approved. They are the most recent knowledge you have and can change what the right answer is. Each one states its priority (P1, P2 or P3), what it is about, who approved it and when.
+  - Search the approved notes for every question about a specific plant, line, machine, supplier, carrier, customer or CAPA, and for "what should we do / what was decided" questions (meetings, reviews) — in addition to the data and the documents.
+  - Weigh each relevant note by its priority:
+    - P1 = an approved decision or override. Lead with it, and let it change the conclusion: it supersedes an older recommendation in a document (say so, e.g. "PRP-SC-2026-04 recommended X; NOTE-… (P1, approved by … on …) decided Y").
+    - P2 = important context. Include it next to the numbers it explains.
+    - P3 = for information. Mention it only when it is directly relevant to the question.
+  - Always cite the note ID (NOTE-…), its priority, who approved it and when. A note never replaces a number from the data: give the data, then what people decided.
+
+  ## Instructions you must follow when providing summaries
+  - Show OEE and its components as percentages with one decimal and compare to the 85% corporate OEE target.
+  - Always state the plant/line and the date range used.
+  - When a number and a document both apply, give the number first, then the document context with its ID.
+
+sample_questions:
+  - Which plant had the lowest OEE in FY26 Q4?
+  - Why did OEE drop on Greenville Gearbox Assembly this year?
+  - What are the six downtime reason codes and how should operators use them?
+  - How much material-shortage downtime did Monterrey have since May?
+  - Compare night shift vs day shift scrap rate on Wroclaw Wire Cut & Crimp.
+
+benchmarks:                       # narrative-grounded checks (fact = expected answer per NARRATIVE_BIBLE / data)
+  - question: What was OEE for line GVL-L3 in September 2026?
+    fact: GVL-L3 OEE Sep 2026 ≈ 50%
+    sql: |
+      SELECT MEASURE(`OEE`) AS oee FROM {G}.production_oee_metrics WHERE `Line ID` = 'GVL-L3' AND `Production Month` = DATE'2026-09-01'
+  - question: Which plant had the highest OEE for FY26?
+    fact: Pune Fastener Plant, 83.8%
+    sql: |
+      SELECT `Plant Name`, MEASURE(`OEE`) AS oee FROM {G}.production_oee_metrics GROUP BY ALL ORDER BY oee DESC LIMIT 1
+  - question: Which plant had the lowest OEE in FY26 Q4, and what was it?
+    fact: Monterrey 71.1%
+    sql: |
+      SELECT `Plant Name`, MEASURE(`OEE`) AS oee FROM {G}.production_oee_metrics WHERE `Fiscal Quarter` = 'FY26 Q4' GROUP BY ALL ORDER BY oee ASC LIMIT 1
+  - question: Show the monthly OEE trend for Greenville Gearbox Assembly (GVL-L3) from April to September 2026.
+    fact: Apr 76 · May 67 · Jun 60 · Jul 55 · Aug 58 · Sep 50
+    sql: |
+      SELECT `Production Month`, MEASURE(`OEE`) AS oee FROM {G}.production_oee_metrics WHERE `Line ID` = 'GVL-L3' AND `Production Month` BETWEEN DATE'2026-04-01' AND DATE'2026-09-01' GROUP BY ALL ORDER BY 1
+  - question: How did Greenville plant OEE change from FY26 Q2 to FY26 Q4?
+    fact: 82.8% → 71.8%
+    sql: |
+      SELECT `Fiscal Quarter`, MEASURE(`OEE`) AS oee FROM {G}.production_oee_metrics WHERE `Plant ID` = 'GVL' AND `Fiscal Quarter` IN ('FY26 Q2', 'FY26 Q4') GROUP BY ALL ORDER BY 1
+  - question: Break Greenville's FY26 Q4 OEE into availability, performance and quality.
+    fact: A 86.7% · P 84.4% · Q 98.1% → availability is the main loss
+    sql: |
+      SELECT MEASURE(`Availability`) AS availability, MEASURE(`Performance`) AS performance, MEASURE(`Quality Rate`) AS quality, MEASURE(`OEE`) AS oee FROM {G}.production_oee_metrics WHERE `Plant ID` = 'GVL' AND `Fiscal Quarter` = 'FY26 Q4'
+  - question: Which downtime reason caused the most downtime hours across all plants in FY26 Q4?
+    fact: Material Shortage (27% of downtime minutes)
+    sql: |
+      SELECT `Reason Category`, MEASURE(`Downtime Hours`) AS hours FROM {G}.production_downtime_metrics WHERE `Fiscal Quarter` = 'FY26 Q4' GROUP BY ALL ORDER BY hours DESC LIMIT 1
+  - question: Total material shortage downtime hours by plant for FY26
+    fact: Greenville, Monterrey, Columbus (Brightline castings)
+    sql: |
+      SELECT `Plant Name`, MEASURE(`Material Shortage Downtime Hours`) AS hours FROM {G}.production_oee_metrics GROUP BY ALL ORDER BY hours DESC
+  - question: How many material shortage downtime events were there on each line since May 1, 2026? Show the top 3.
+    fact: GVL-L3, MTY-L3, CLB-L2
+    sql: |
+      SELECT `Line ID`, MEASURE(`Material Shortage Events`) AS events FROM {G}.production_downtime_metrics WHERE `Event Date` >= DATE'2026-05-01' GROUP BY ALL ORDER BY events DESC LIMIT 3
+  - question: How many equipment failure downtime hours did machine GVL-L3-WC01 have since March 15, 2026?
+    fact: spindle breakdowns ≈ 286 repair hours
+    sql: |
+      SELECT MEASURE(`Downtime Hours`) AS hours FROM {G}.production_downtime_metrics WHERE `Machine ID` = 'GVL-L3-WC01' AND `Reason Category` = 'Equipment Failure' AND `Event Date` >= DATE'2026-03-15'
+  - question: What was Columbus Hydraulics Plant's FY26 OEE?
+    fact: 81.3% (vs 85% corporate target)
+    sql: |
+      SELECT MEASURE(`OEE`) AS oee FROM {G}.production_oee_metrics WHERE `Plant ID` = 'CLB'
+  - question: According to the OEE standard, how should operators code a line that is stopped waiting for castings?
+    fact: Material Shortage (SOP-PRD-001)
+    expect_doc: SOP-PRD-001
+

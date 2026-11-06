@@ -1,0 +1,81 @@
+# Supervisor evaluation set.
+# Each case says which domain expert(s) MUST be consulted and which facts MUST appear.
+# Facts come from documents/NARRATIVE_BIBLE.md, so they hold for every deploy (seed 42).
+# Add cases here — 03_evaluate_supervisor picks them up automatically.
+cases:
+  # ---- single domain, numbers
+  - question: Which plant had the lowest OEE in FY26 Q4?
+    expected_tools: [production]
+    expected_facts: ["Monterrey Machining Plant had the lowest OEE in FY26 Q4, about 71%"]
+  - question: What is Ridgeway Freight's carrier on-time rate compared to its SLA?
+    expected_tools: [supply_chain]
+    expected_facts: ["Ridgeway Freight on-time is about 77%", "The SLA is 95%"]
+  - question: How many porosity NCRs have been opened since May 2026?
+    expected_tools: [quality]
+    expected_facts: ["380 porosity NCRs since May 2026"]
+  - question: What is PM compliance at Greenville versus Columbus?
+    expected_tools: [maintenance]
+    expected_facts: ["Greenville PM compliance is 80.6% (about 81%)", "Columbus PM compliance is 96.6% (about 97%)"]
+  # ---- single domain, documents
+  - question: What vibration limit does the Hartwell manual give for replacing spindle bearings, and what does PM-CNC-030 use?
+    expected_tools: [maintenance]
+    expected_facts: ["The Hartwell OEM limit is 4.5 mm/s", "PM-CNC-030 uses 7.1 mm/s"]
+  - question: Under the Brightline supplier quality agreement, how fast must they respond to a SCAR?
+    expected_tools: [quality]
+    expected_facts: ["10 business days"]
+  - question: What service credit does the Ridgeway carrier contract give when on-time falls below target?
+    expected_tools: [supply_chain]
+    expected_facts: ["2% of monthly freight spend for each point below 92%"]
+  # ---- cross-domain
+  - question: Why did OEE drop on Greenville Gearbox Assembly this year and what should we do?
+    expected_tools: [production, maintenance]
+    expected_facts: ["GVL-L3-WC01 spindle bearing wear is the main cause", "Vibration exceeded the 4.5 mm/s OEM limit"]
+  - question: How is Brightline Castings affecting our plants — deliveries, quality and downtime?
+    expected_tools: [supply_chain, quality, production]
+    expected_facts: ["Brightline on-time delivery fell to about 44%", "Brightline PPM is about 2,700 versus a 500 limit"]
+  - question: Is the Wroclaw night shift a quality problem, and what is being done about it?
+    expected_tools: [quality]
+    expected_facts: ["C shift defect rate on WRO-L1 is about 13.6%", "CAPA-2026-102 is in progress"]
+  # ---- added 2026-10-30: deeper storyline checks (facts from NARRATIVE_BIBLE.md)
+  - question: When did GVL-L3-WC01's vibration cross the Hartwell OEM limit, and how much earlier was that than our internal PM limit?
+    expected_tools: [maintenance]
+    expected_facts: ["Vibration crossed the 4.5 mm/s OEM limit in June 2026", "That was about two months before the 7.1 mm/s internal limit was reached in August 2026"]
+  - question: How many breakdowns has GVL-L3-WC01 had since 2026-03-15, and what did they cost in repair hours and contractor spend?
+    expected_tools: [maintenance]
+    expected_facts: ["30 breakdowns since 2026-03-15", "About 286 repair hours", "About $146K contractor (Hartwell field service) cost"]
+  - question: How long is the lead time for a replacement Hartwell spindle cartridge, and do we have a spare?
+    expected_tools: [maintenance]
+    expected_facts: ["About 10 weeks lead time", "No spare spindle on site"]
+  - question: What is the status of the CAPA for bore position drift on GVL-L3?
+    expected_tools: [quality]
+    expected_facts: ["CAPA-2026-103", "It is open and past its 2026-07-23 due date"]
+  - question: What is the crimp height specification on the Wroclaw Wire Cut & Crimp line?
+    expected_tools: [quality]
+    expected_facts: ["1.650 mm ± 0.050 mm"]
+  - question: What is the root cause of the night-shift crimp defects on WRO-L1-WC02?
+    expected_tools: [quality]
+    expected_facts: ["C shift uses the superseded work instruction WI-WRO-CR-07 Rev D instead of Rev E", "C shift has no Level 3 certified setter"]
+  - question: Is Apex Agricultural Equipment getting the delivery performance their supplier scorecard requires?
+    expected_tools: [supply_chain]
+    expected_facts: ["Apex OTIF is about 92.6%", "The scorecard requires 95% OTIF", "OTIF on Ridgeway Freight shipments is about 88%"]
+  - question: Which carrier should we be worried about at the Memphis DC, and why?
+    expected_tools: [supply_chain]
+    expected_facts: ["Ridgeway Freight", "About 77% on-time versus a 95% SLA", "Ridgeway carries about 38% of Memphis shipments"]
+  - question: What alternative suppliers do we have for the castings Brightline makes, and what would switching take?
+    expected_tools: [supply_chain]
+    expected_facts: ["Keystone Foundry", "Silesia Metalworks", "PPAP takes about 12 weeks and the piece price is about 6% higher"]
+  - question: What is our total PO spend with Brightline Castings this year?
+    expected_tools: [supply_chain]
+    # Governance case: Genie runs AS THE ASKER, so the right answer depends on who runs the evaluation.
+    expected_facts: ["The PO spend value is confidential (masked) and is not disclosed"]          # not in a cleared group
+    expected_facts_if_cleared: ["FY2026 PO spend with Brightline Castings is about $44.6M"]        # in governance.confidential.visible_to
+  # ---- cross-domain
+  - question: Why is Monterrey's OEE down in FY26 Q4?
+    expected_tools: [production, supply_chain]
+    expected_facts: ["Monterrey FY26 Q4 OEE is about 71%", "Brightline Castings late deliveries cause material shortages", "Brightline casting porosity drives quality losses"]
+  - question: Compare Columbus and Greenville on maintenance practices and results.
+    expected_tools: [maintenance]
+    expected_facts: ["Columbus PM compliance 96.6% (about 97%) versus Greenville 80.6% (about 81%)", "Greenville had 83 breakdowns versus 48 at Columbus"]
+  - question: Give me an executive summary of our three biggest operational risks right now.
+    expected_tools: [maintenance, supply_chain]
+    expected_facts: ["The GVL-L3-WC01 spindle failure at Greenville", "Brightline Castings supplier quality and delivery", "Ridgeway Freight on-time performance at Memphis"]

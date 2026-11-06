@@ -1,0 +1,201 @@
+# =============================================================================
+# Genie space: Supply Chain & Warehousing
+# =============================================================================
+key: supply_chain
+title: KK's Parts Supply Chain & Warehousing
+description: >-
+  Inbound and outbound supply chain for KK's Parts (FY2026: Oct 2025 - Sep 2026):
+  supplier on-time delivery (OTD), days late and incoming quality PPM vs contract limits, purchase
+  order spend, daily inventory and stockouts at plant warehouses and distribution centers
+  (Memphis, Reno, Rotterdam), and customer shipments - carrier on-time vs SLA, customer OTIF against customer scorecards (e.g. Apex Agricultural Equipment's 95% OTIF requirement),
+  freight cost and transit time - by supplier, material, warehouse, carrier, customer and period.
+  Also answers from supply-chain documents: supplier and carrier contracts, supplier scorecard,
+  dual-sourcing proposal, carrier performance review, customer escalation, warehouse SOP,
+  inventory policy and S&OP minutes. Not for OEE/downtime, maintenance, or in-process quality.
+
+# Documents: the genie_docs_supply_chain volume, attached to the space (Agent-mode file search). Approved notes: the
+# app_notes_supply_chain volume (one NOTE-<id>.md per approved note, written by the sync job).
+sql_functions: []
+
+metric_views:
+  - supply_supplier_performance_metrics
+  - supply_inventory_metrics
+  - supply_shipment_metrics
+
+tables:
+  - name: fact_supplier_receipt
+    column_configs:
+      - { column_name: supplier_name, enable_entity_matching: true, enable_format_assistance: true, synonyms: [supplier, vendor] }
+      - { column_name: material_name, enable_entity_matching: true }
+      - { column_name: supplier_category, enable_entity_matching: true, synonyms: [commodity] }
+      - { column_name: plant_name, enable_entity_matching: true }
+  - name: fact_inventory_daily
+    column_configs:
+      - { column_name: warehouse_name, enable_entity_matching: true, synonyms: [warehouse, DC, distribution center] }
+      - { column_name: item_name, enable_entity_matching: true }
+      - { column_name: item_type, enable_entity_matching: true }
+  - name: fact_shipment
+    column_configs:
+      - { column_name: carrier_name, enable_entity_matching: true, enable_format_assistance: true, synonyms: [carrier, trucking company] }
+      - { column_name: customer_name, enable_entity_matching: true, enable_format_assistance: true, synonyms: [customer, account] }
+      - { column_name: warehouse_name, enable_entity_matching: true }
+      - { column_name: customer_tier, enable_entity_matching: true }
+      - { column_name: tracking_number, exclude: true }
+  - name: dim_supplier
+  - name: dim_carrier
+  - name: dim_customer
+  - name: dim_warehouse
+    column_configs:
+      - { column_name: latitude, exclude: true }
+      - { column_name: longitude, exclude: true }
+
+join_specs:
+  - { left: fact_supplier_receipt, right: dim_supplier, condition: "`fact_supplier_receipt`.`supplier_id` = `dim_supplier`.`supplier_id`", rt: MANY_TO_ONE }
+  - { left: fact_shipment, right: dim_carrier, condition: "`fact_shipment`.`carrier_id` = `dim_carrier`.`carrier_id`", rt: MANY_TO_ONE }
+  - { left: fact_shipment, right: dim_customer, condition: "`fact_shipment`.`customer_id` = `dim_customer`.`customer_id`", rt: MANY_TO_ONE }
+  - { left: fact_inventory_daily, right: dim_warehouse, condition: "`fact_inventory_daily`.`warehouse_id` = `dim_warehouse`.`warehouse_id`", rt: MANY_TO_ONE }
+
+sql_snippets:
+  filters:
+    - { display_name: Current inventory (latest snapshot), sql: "fact_inventory_daily.snapshot_date = DATE'2026-09-30'", synonyms: [current stock, on hand now, latest inventory] }
+    - { display_name: Memphis DC, sql: "fact_shipment.warehouse_id = 'DC-MEM'", synonyms: [Memphis, DC-MEM lane] }
+    - { display_name: Strategic customers, sql: "fact_shipment.customer_tier = 'Strategic'", synonyms: [key accounts, top customers] }
+    - { display_name: Late receipts, sql: "fact_supplier_receipt.days_late > 0", synonyms: [late deliveries, late POs] }
+
+example_sqls:
+  - question: What share of Reno DC shipments does each carrier carry?
+    usage_guidance: A share of a total needs the total over ALL carriers - compute the window total first, then filter to one carrier in an outer query. Filtering to one carrier before the window total makes every share 100%.
+    sql: |
+      WITH by_carrier AS (
+        SELECT `Carrier Name`, MEASURE(`Shipments`) AS shipments
+        FROM {G}.supply_shipment_metrics
+        WHERE `Warehouse ID` = 'DC-RNO' AND `Carrier Name` IS NOT NULL
+        GROUP BY ALL),
+      shares AS (
+        SELECT `Carrier Name`, shipments, try_divide(shipments, SUM(shipments) OVER ()) AS share_of_dc_shipments
+        FROM by_carrier)
+      SELECT * FROM shares ORDER BY shipments DESC
+  - question: Show supplier on-time delivery and PPM by supplier for FY26 Q4
+    usage_guidance: OTD and PPM are governed ratios - always use MEASURE().
+    sql: |
+      SELECT `Supplier Name`, `Supplier Category`, `PPM Limit`,
+             MEASURE(`Supplier OTD`) AS otd, MEASURE(`Supplier PPM`) AS ppm, MEASURE(`Average Days Late`) AS avg_days_late, MEASURE(`Receipts`) AS receipts
+      FROM {G}.supply_supplier_performance_metrics
+      WHERE `Fiscal Quarter` = 'FY26 Q4'
+      GROUP BY ALL ORDER BY otd
+  - question: Show Brightline Castings monthly on-time delivery and PPM
+    sql: |
+      SELECT `Promised Month`, MEASURE(`Supplier OTD`) AS otd, MEASURE(`Supplier PPM`) AS ppm, MEASURE(`Average Days Late`) AS avg_days_late
+      FROM {G}.supply_supplier_performance_metrics
+      WHERE `Supplier Name` = 'Brightline Castings'
+      GROUP BY ALL ORDER BY `Promised Month`
+  - question: Which carriers are missing their on-time SLA out of Memphis?
+    sql: |
+      SELECT `Carrier Name`, MEASURE(`Carrier On-Time Rate`) AS carrier_on_time, MEASURE(`Shipments`) AS shipments, MEASURE(`Freight Cost USD`) AS freight_usd
+      FROM {G}.supply_shipment_metrics
+      WHERE `Warehouse ID` = 'DC-MEM'
+      GROUP BY ALL ORDER BY carrier_on_time
+  - question: What is OTIF for strategic customers by carrier?
+    sql: |
+      SELECT `Customer Name`, `Carrier Name`, MEASURE(`OTIF`) AS otif, MEASURE(`Delivered Shipments`) AS delivered
+      FROM {G}.supply_shipment_metrics
+      WHERE `Customer Tier` = 'Strategic'
+      GROUP BY ALL ORDER BY otif
+  - question: Which items are stocked out right now?
+    usage_guidance: Inventory is a daily snapshot - for "now"/"current" filter to the latest snapshot date 2026-09-30.
+    sql: |
+      SELECT warehouse_id, warehouse_name, item_id, item_name, item_type, on_hand_qty, allocated_qty, safety_stock_qty
+      FROM {G}.fact_inventory_daily
+      WHERE snapshot_date = DATE'2026-09-30' AND is_stockout
+      ORDER BY warehouse_id, item_id
+  - question: Monthly stockout rate for raw materials at plant warehouses
+    sql: |
+      SELECT `Snapshot Month`, `Warehouse ID`, MEASURE(`Stockout Rate`) AS stockout_rate
+      FROM {G}.supply_inventory_metrics
+      WHERE `Item Type` = 'Raw Material'
+      GROUP BY ALL ORDER BY `Snapshot Month`, `Warehouse ID`
+
+text_instructions: |
+  ## PURPOSE
+  - Supply chain analytics for buyers, supplier quality, logistics managers and the Director of Supply Chain & Logistics.
+  - Domain documents (MSA-BLC-2023, CTA-RF-2024-07, SCR-2026-Q3, PRP-SC-2026-04, CPR-MEM-2026-08, ESC-APEX-2026-08, SOP-WMS-002, POL-INV-001, SOP-MIN-2026-08, GLS-SCM-001) are attached to this space as files — Agent mode searches them. They hold contract terms, SLAs, penalties, decisions and customer commitments. Search them for "what does the contract/SLA say", "what penalties apply" and "what did we decide/commit" questions, and cite the document ID.
+
+  ## DISAMBIGUATION
+  - Data covers 2025-10-01 to 2026-09-30. "Current", "now" and "this month" are relative to 2026-09-30.
+  - "Q1-Q4" are fiscal quarters (FY starts Oct 1).
+  - Plants: CLB = Columbus Hydraulics Plant, GVL = Greenville Drivetrain Plant, MTY = Monterrey Machining Plant, WRO = Wroclaw Electrical Plant, PNQ = Pune Fastener Plant. Filter plants on Plant ID, never on a guessed plant name.
+  - "On-time" for a carrier means delivered by the carrier due date; for a customer it means by the requested date. OTIF also requires full quantity. Ask which one if unclear.
+  - Customers (e.g. Apex Agricultural Equipment) are measured on KK's Parts' OTIF to them. A customer's "supplier scorecard" is that customer's requirement for KK's Parts as their supplier (95% OTIF): answer with customer OTIF from supply_shipment_metrics, not with supplier metrics.
+
+  ## APPROVED APP NOTES (human decisions and context)
+  - Documents (procedures, contracts, manuals, reports, meeting reviews and minutes) and approved app notes are attached to this space as files. Never answer that documents, minutes or notes are unavailable, or ask for search to be enabled — search the attached files.
+  - Approved app notes are the files named NOTE-<id>.md: decisions and context people added in the Andon app and a reviewer approved. They are the most recent knowledge you have and can change what the right answer is. Each one states its priority (P1, P2 or P3), what it is about, who approved it and when.
+  - Search the approved notes for every question about a specific plant, line, machine, supplier, carrier, customer or CAPA, and for "what should we do / what was decided" questions (meetings, reviews) — in addition to the data and the documents.
+  - Weigh each relevant note by its priority:
+    - P1 = an approved decision or override. Lead with it, and let it change the conclusion: it supersedes an older recommendation in a document (say so, e.g. "PRP-SC-2026-04 recommended X; NOTE-… (P1, approved by … on …) decided Y").
+    - P2 = important context. Include it next to the numbers it explains.
+    - P3 = for information. Mention it only when it is directly relevant to the question.
+  - Always cite the note ID (NOTE-…), its priority, who approved it and when. A note never replaces a number from the data: give the data, then what people decided.
+
+  ## Instructions you must follow when providing summaries
+  - Show OTD, on-time and OTIF as percentages with one decimal and compare to the 95% target/SLA.
+  - Compare supplier PPM to that supplier's contract PPM limit.
+  - When asked how a supplier or carrier is performing or affecting us, show the trend by month (or before vs after the month things changed) as well as the full-year figure, so a recent decline is not averaged away.
+  - When a number and a document both apply, give the number first, then the document context with its ID.
+
+sample_questions:
+  - Which suppliers are below the 95% on-time target?
+  - How has Brightline Castings performed since May?
+  - Is Ridgeway Freight meeting its SLA, and what credits do we get?
+  - What is OTIF for Apex Agricultural Equipment?
+  - Which items are stocked out at the plant warehouses right now?
+
+benchmarks:                       # narrative-grounded checks (fact = expected answer per NARRATIVE_BIBLE / data)
+  - question: Carrier on-time rate for Ridgeway Freight in FY26
+    fact: 77%
+    sql: |
+      SELECT MEASURE(`Carrier On-Time Rate`) AS on_time FROM {G}.supply_shipment_metrics WHERE `Carrier Name` = 'Ridgeway Freight'
+  - question: Which carrier has the lowest on-time rate in FY26?
+    fact: Ridgeway Freight
+    sql: |
+      SELECT `Carrier Name`, MEASURE(`Carrier On-Time Rate`) AS on_time FROM {G}.supply_shipment_metrics GROUP BY ALL ORDER BY on_time ASC LIMIT 1
+  - question: In which month was Ridgeway Freight's on-time rate worst?
+    fact: November 2025, 69%
+    sql: |
+      SELECT `Ship Month`, MEASURE(`Carrier On-Time Rate`) AS on_time FROM {G}.supply_shipment_metrics WHERE `Carrier Name` = 'Ridgeway Freight' GROUP BY ALL ORDER BY on_time ASC LIMIT 1
+  - question: What share of Memphis DC shipments does Ridgeway Freight carry?
+    fact: ≈ 38%
+    sql: |
+      SELECT SUM(CASE WHEN carrier_name = 'Ridgeway Freight' THEN 1 ELSE 0 END) / COUNT(*) AS ridgeway_share FROM {G}.fact_shipment WHERE warehouse_id = 'DC-MEM'
+  - question: What is Apex Agricultural Equipment's OTIF for FY26?
+    fact: ≈ 92.6% (scorecard requires 95%)
+    sql: |
+      SELECT MEASURE(`OTIF`) AS otif FROM {G}.supply_shipment_metrics WHERE `Customer Name` = 'Apex Agricultural Equipment'
+  - question: What is Apex Agricultural Equipment's OTIF on Ridgeway Freight shipments?
+    fact: ≈ 88.3%
+    sql: |
+      SELECT MEASURE(`OTIF`) AS otif FROM {G}.supply_shipment_metrics WHERE `Customer Name` = 'Apex Agricultural Equipment' AND `Carrier Name` = 'Ridgeway Freight'
+  - question: Which distribution center has the lowest customer OTIF in FY26?
+    fact: DC-MEM Memphis 91.9%
+    sql: |
+      SELECT `Warehouse ID`, MEASURE(`OTIF`) AS otif FROM {G}.supply_shipment_metrics WHERE `Warehouse ID` LIKE 'DC-%' GROUP BY ALL ORDER BY otif ASC LIMIT 1
+  - question: What is Brightline Castings' overall supplier PPM across all receipts promised since May 1, 2026 (one number)?
+    fact: ≈ 2,726 (limit 500)
+    sql: |
+      SELECT MEASURE(`Supplier PPM`) AS ppm FROM {G}.supply_supplier_performance_metrics WHERE `Supplier Name` = 'Brightline Castings' AND `Promised Month` >= DATE'2026-05-01'
+  - question: Compare Brightline Castings' on-time delivery for receipts promised before May 1, 2026 with those promised on or after May 1, 2026.
+    fact: 92% → 44%
+    sql: |
+      SELECT CASE WHEN `Promised Month` >= DATE'2026-05-01' THEN 'after' ELSE 'before' END AS period, MEASURE(`Supplier OTD`) AS otd FROM {G}.supply_supplier_performance_metrics WHERE `Supplier Name` = 'Brightline Castings' GROUP BY ALL ORDER BY 1 DESC
+  - question: Which supplier had the lowest on-time delivery in FY26?
+    fact: Brightline Castings 71.3%
+    sql: |
+      SELECT `Supplier Name`, MEASURE(`Supplier OTD`) AS otd FROM {G}.supply_supplier_performance_metrics GROUP BY ALL ORDER BY otd ASC LIMIT 1
+  - question: Which warehouse had the most stockout item-days in FY26 Q4?
+    fact: Greenville Plant Warehouse
+    sql: |
+      SELECT `Warehouse Name`, MEASURE(`Stockout Item Days`) AS stockout_days FROM {G}.supply_inventory_metrics WHERE `Fiscal Quarter` = 'FY26 Q4' GROUP BY ALL ORDER BY stockout_days DESC LIMIT 1
+  - question: What service credit does the Ridgeway Freight contract give when on-time falls below target?
+    fact: 2% of monthly freight spend per point below 92% (CTA-RF-2024-07)
+    expect_doc: CTA-RF-2024-07
+

@@ -1,0 +1,225 @@
+# Metric view: supply_shipment_metrics   (Genie space: supply_chain)
+# Deployed by 02_create_metric_views as {catalog}.{gold_schema}.supply_shipment_metrics
+# {catalog} / {gold_schema} are filled in from config/demo_config.yml.
+version: 1.1
+source: '{catalog}.{gold_schema}.fact_shipment'
+comment: 'Outbound logistics KPIs per shipment: carrier on-time vs SLA, customer on-time and OTIF, freight cost, transit time, by carrier, DC, customer, product and period.'
+dimensions:
+- name: Ship Date
+  expr: ship_date
+  comment: Calendar date of the ship.
+  display_name: Ship Date
+  synonyms:
+  - ship day
+  - date
+- name: Ship Month
+  expr: ship_month
+  comment: First day of the calendar month of the ship.
+  display_name: Ship Month
+  synonyms:
+  - month
+- name: Fiscal Quarter
+  expr: fiscal_quarter
+  comment: 'KK''s Parts fiscal quarter, e.g. ''FY26 Q3''. Fiscal year starts Oct 1: Q1 Oct-Dec, Q2 Jan-Mar, Q3 Apr-Jun, Q4 Jul-Sep.'
+  display_name: Fiscal Quarter
+  synonyms:
+  - quarter
+  - fiscal period
+  - FQ
+- name: Warehouse ID
+  expr: warehouse_id
+  comment: 'Shipping DC: DC-MEM Memphis, DC-RNO Reno, DC-RTM Rotterdam.'
+  display_name: Warehouse ID
+  synonyms:
+  - DC
+  - origin
+  - lane origin
+- name: Warehouse Name
+  expr: warehouse_name
+  comment: Shipping DC name.
+  display_name: Warehouse Name
+  synonyms:
+  - distribution center
+- name: Carrier ID
+  expr: carrier_id
+  comment: Carrier code, e.g. CAR-04.
+  display_name: Carrier ID
+  synonyms:
+  - carrier code
+- name: Carrier Name
+  expr: carrier_name
+  comment: Carrier, e.g. 'Ridgeway Freight'.
+  display_name: Carrier Name
+  synonyms:
+  - carrier
+  - freight carrier
+  - trucking company
+  - 3PL
+- name: Carrier Mode
+  expr: carrier_mode
+  comment: LTL, FTL, Parcel, Intermodal, Ocean/Air.
+  display_name: Carrier Mode
+  synonyms:
+  - mode
+- name: Customer Name
+  expr: customer_name
+  comment: Customer, e.g. 'Apex Agricultural Equipment'.
+  display_name: Customer Name
+  synonyms:
+  - customer
+  - account
+- name: Customer Tier
+  expr: customer_tier
+  comment: Strategic, Key, Standard.
+  display_name: Customer Tier
+  synonyms:
+  - tier
+  - segment
+- name: Customer Industry
+  expr: customer_industry
+  comment: Customer industry.
+  display_name: Customer Industry
+  synonyms:
+  - industry
+- name: Customer Region
+  expr: customer_region
+  comment: Customer region.
+  display_name: Customer Region
+  synonyms:
+  - region
+- name: Part Number
+  expr: part_number
+  comment: Part shipped.
+  display_name: Part Number
+  synonyms:
+  - SKU
+- name: Product Family
+  expr: product_family
+  comment: Product family shipped.
+  display_name: Product Family
+  synonyms:
+  - product line
+- name: Producing Plant
+  expr: producing_plant_id
+  comment: Plant that makes the part.
+  display_name: Producing Plant
+  synonyms:
+  - source plant
+- name: Shipment Status
+  expr: shipment_status
+  comment: Delivered or In Transit.
+  display_name: Shipment Status
+  synonyms:
+  - status
+measures:
+- name: Shipments
+  expr: COUNT(1)
+  comment: Number of shipments.
+  display_name: Shipments
+  synonyms:
+  - deliveries
+  - loads
+- name: Delivered Shipments
+  expr: COUNT(1) FILTER (WHERE delivered_date IS NOT NULL)
+  comment: Shipments delivered.
+  display_name: Delivered Shipments
+- name: Carrier On-Time Rate
+  expr: COUNT_IF(is_carrier_on_time) / COUNT_IF(is_carrier_on_time IS NOT NULL)
+  comment: Delivered by carrier due date (ship date + planned transit) / delivered. Contract SLA 95%.
+  display_name: Carrier On-Time Rate
+  synonyms:
+  - carrier on-time
+  - on-time %
+  - carrier performance
+  - OTP
+  format:
+    type: percentage
+    decimal_places:
+      type: max
+      places: 1
+- name: Customer On-Time Rate
+  expr: COUNT_IF(is_on_time_to_customer) / COUNT_IF(is_on_time_to_customer IS NOT NULL)
+  comment: Delivered by customer requested date / delivered.
+  display_name: Customer On-Time Rate
+  synonyms:
+  - on time to customer
+  format:
+    type: percentage
+    decimal_places:
+      type: max
+      places: 1
+- name: OTIF
+  expr: COUNT_IF(is_otif) / COUNT_IF(is_otif IS NOT NULL)
+  comment: On time (to customer requested date) and in full / delivered. Customer target 95%.
+  display_name: OTIF
+  synonyms:
+  - on time in full
+  - OTIF %
+  - delivery performance
+  format:
+    type: percentage
+    decimal_places:
+      type: max
+      places: 1
+- name: In-Full Rate
+  expr: COUNT_IF(is_in_full) / COUNT(1)
+  comment: Shipped quantity >= ordered quantity.
+  display_name: In-Full Rate
+  synonyms:
+  - fill rate
+  format:
+    type: percentage
+    decimal_places:
+      type: max
+      places: 1
+- name: Late Carrier Shipments
+  expr: COUNT_IF(NOT is_carrier_on_time)
+  comment: Delivered after the carrier due date.
+  display_name: Late Carrier Shipments
+  synonyms:
+  - late deliveries
+- name: Freight Cost USD
+  expr: SUM(freight_cost_usd)
+  comment: Freight spend, USD.
+  display_name: Freight Cost USD
+  synonyms:
+  - freight spend
+  - shipping cost
+  format:
+    type: currency
+    currency_code: USD
+    decimal_places:
+      type: max
+      places: 0
+- name: Freight Cost per Shipment
+  expr: MEASURE(`Freight Cost USD`) / MEASURE(`Shipments`)
+  comment: Average freight cost per shipment, USD.
+  display_name: Freight Cost per Shipment
+  synonyms:
+  - cost per shipment
+  format:
+    type: currency
+    currency_code: USD
+    decimal_places:
+      type: max
+      places: 0
+- name: Order Value USD
+  expr: SUM(order_value_usd)
+  comment: Order value of shipped lines, USD.
+  display_name: Order Value USD
+  synonyms:
+  - revenue
+  - sales value
+  format:
+    type: currency
+    currency_code: USD
+    decimal_places:
+      type: max
+      places: 0
+- name: Average Transit Days
+  expr: AVG(actual_transit_days)
+  comment: Average actual transit days (delivered shipments).
+  display_name: Average Transit Days
+  synonyms:
+  - transit time
+  - lead time

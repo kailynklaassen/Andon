@@ -1,0 +1,192 @@
+# =============================================================================
+# Genie space: Quality & Compliance
+# =============================================================================
+key: quality
+title: KK's Parts Quality & Compliance
+description: >-
+  Product quality for KK's Parts (FY2026: Oct 2025 - Sep 2026): in-process
+  inspections, defect rate and PPM, process capability (Cpk) of each line's critical characteristic,
+  nonconformance reports (NCRs) from in-process, incoming and customer sources, cost of poor quality
+  (COPQ), dispositions, and corrective/preventive actions (CAPA, SCAR) with status and due dates,
+  by plant, line, shift, defect code, supplier and period. Also answers from quality documents:
+  NCR and CAPA procedures, supplier quality agreement, SCARs, 8D reports, control plans,
+  incoming inspection procedure, quality management review and the quality KPI glossary.
+  Includes supplier incoming-quality PPM vs each supplier's contract limit.
+  Not for OEE/downtime, maintenance work orders, or supplier delivery/logistics.
+
+# Documents: the genie_docs_quality volume, attached to the space (Agent-mode file search). Approved notes: the
+# app_notes_quality volume (one NOTE-<id>.md per approved note, written by the sync job).
+sql_functions: []
+
+metric_views:
+  - quality_inspection_metrics
+  - quality_ncr_metrics
+  - supply_supplier_performance_metrics   # shared with Supply Chain: supplier incoming-quality PPM vs contract limit
+
+tables:
+  - name: fact_quality_inspection
+    column_configs:
+      - { column_name: primary_defect_code, enable_entity_matching: true, enable_format_assistance: true, synonyms: [defect, defect type] }
+      - { column_name: shift, enable_entity_matching: true, description: ["A = 06:00-14:00, B = 14:00-22:00, C = 22:00-06:00 (night shift)."] }
+      - { column_name: line_name, enable_entity_matching: true }
+      - { column_name: plant_name, enable_entity_matching: true }
+      - { column_name: characteristic, enable_entity_matching: true, synonyms: [CTQ, measurement] }
+      - { column_name: inspector_id, exclude: true }
+  - name: fact_nonconformance
+    column_configs:
+      - { column_name: defect_code, enable_entity_matching: true, enable_format_assistance: true }
+      - { column_name: supplier_name, enable_entity_matching: true, synonyms: [supplier, vendor] }
+      - { column_name: source, enable_entity_matching: true, synonyms: [NCR source, origin] }
+      - { column_name: disposition, enable_entity_matching: true }
+      - { column_name: capa_status, enable_entity_matching: true }
+      - { column_name: plant_name, enable_entity_matching: true }
+  - name: fact_capa
+    column_configs:
+      - { column_name: status, enable_entity_matching: true, synonyms: [CAPA status] }
+      - { column_name: root_cause_category, enable_entity_matching: true }
+      - { column_name: owner_id, exclude: true }
+  - name: dim_production_line
+  - name: dim_supplier
+
+join_specs:
+  - { left: fact_quality_inspection, right: dim_production_line, condition: "`fact_quality_inspection`.`line_id` = `dim_production_line`.`line_id`", rt: MANY_TO_ONE }
+  - { left: fact_nonconformance, right: fact_capa, condition: "`fact_nonconformance`.`capa_id` = `fact_capa`.`capa_id`", rt: MANY_TO_ONE }
+  - { left: fact_nonconformance, right: dim_supplier, condition: "`fact_nonconformance`.`supplier_id` = `dim_supplier`.`supplier_id`", rt: MANY_TO_ONE }
+
+sql_snippets:
+  filters:
+    - { display_name: Night shift, sql: "fact_quality_inspection.shift = 'C'", synonyms: [C shift, third shift] }
+    - { display_name: Open CAPAs past due, sql: "fact_capa.status <> 'Closed' AND fact_capa.due_date < DATE'2026-09-30'", synonyms: [overdue CAPAs, late corrective actions] }
+    - { display_name: Supplier-caused NCRs, sql: "fact_nonconformance.source = 'Incoming Inspection'", synonyms: [supplier escapes, incoming rejects] }
+    - { display_name: Major NCRs, sql: "fact_nonconformance.severity = 'Major'" }
+
+example_sqls:
+  - question: What is Brightline Castings' supplier PPM since May 2026 versus its contract limit?
+    usage_guidance: Supplier PPM = rejected / received x 1e6 from incoming inspection - always use the governed Supplier PPM measure, never sum NCR quantities.
+    sql: |
+      SELECT `Supplier Name`, `PPM Limit`, MEASURE(`Supplier PPM`) AS ppm, MEASURE(`Rejected Qty`) AS rejected, MEASURE(`Received Qty`) AS received
+      FROM {G}.supply_supplier_performance_metrics
+      WHERE `Supplier Name` = 'Brightline Castings' AND `Promised Month` >= DATE'2026-05-01'
+      GROUP BY ALL
+  - question: Compare defect rate by shift on Wroclaw Wire Cut & Crimp before and after June 8, 2026
+    usage_guidance: Period comparison - compute the measure per period/shift with a derived period dimension in a CTE.
+    sql: |
+      SELECT CASE WHEN `Inspection Date` >= DATE'2026-06-08' THEN 'After 2026-06-08' ELSE 'Before 2026-06-08' END AS period,
+             `Shift`, MEASURE(`Defect Rate`) AS defect_rate, MEASURE(`Average Cpk`) AS avg_cpk, MEASURE(`Inspections`) AS inspections
+      FROM {G}.quality_inspection_metrics
+      WHERE `Line ID` = 'WRO-L1'
+      GROUP BY ALL ORDER BY period, `Shift`
+  - question: What is the cost of poor quality by defect code since May 2026?
+    sql: |
+      SELECT `Defect Code`, MEASURE(`NCR Count`) AS ncrs, MEASURE(`COPQ USD`) AS copq_usd
+      FROM {G}.quality_ncr_metrics
+      WHERE `Opened Date` >= DATE'2026-05-01'
+      GROUP BY ALL ORDER BY copq_usd DESC
+  - question: Which suppliers have the most incoming-inspection NCRs?
+    sql: |
+      SELECT `Supplier Name`, MEASURE(`Supplier NCRs`) AS supplier_ncrs, MEASURE(`Quantity Affected`) AS qty, MEASURE(`COPQ USD`) AS copq_usd
+      FROM {G}.quality_ncr_metrics
+      WHERE `NCR Source` = 'Incoming Inspection'
+      GROUP BY ALL ORDER BY supplier_ncrs DESC
+  - question: Show NCRs per month by plant for porosity
+    sql: |
+      SELECT `Opened Month`, `Plant Name`, MEASURE(`NCR Count`) AS ncrs
+      FROM {G}.quality_ncr_metrics WHERE `Defect Code` = 'Porosity'
+      GROUP BY ALL ORDER BY `Opened Month`, `Plant Name`
+  - question: List open CAPAs that are past their due date
+    usage_guidance: CAPA register detail lives in fact_capa.
+    sql: |
+      SELECT capa_id, title, plant_name, supplier_name, status, opened_date, due_date,
+             DATEDIFF(DATE'2026-09-30', due_date) AS days_past_due, linked_ncr_count, ROUND(linked_copq_usd, 0) AS linked_copq_usd
+      FROM {G}.fact_capa
+      WHERE status <> 'Closed' AND due_date < DATE'2026-09-30'
+      ORDER BY days_past_due DESC
+  - question: Which lines have the lowest process capability?
+    sql: |
+      SELECT `Line ID`, `Line Name`, `Characteristic`, MEASURE(`Average Cpk`) AS avg_cpk, MEASURE(`Low Capability Inspections`) AS low_cpk_inspections
+      FROM {G}.quality_inspection_metrics
+      GROUP BY ALL ORDER BY avg_cpk ASC LIMIT 10
+
+text_instructions: |
+  ## PURPOSE
+  - Quality analytics for KK's Parts quality engineers, plant quality managers and the Director of Quality.
+  - Domain documents (QP-*, SQA-BLC-2023, SCAR-2026-014, 8D-WRO-2026-009, CP-*, QR-2026-Q3, GLS-QUA-001) are attached to this space as files — Agent mode searches them. They define procedures, limits, contract terms and root causes. Search them for "what is the limit/procedure/requirement" and "what is the root cause/status of the investigation" questions, and cite the document ID.
+
+  ## DISAMBIGUATION
+  - Data covers 2025-10-01 to 2026-09-30. "Current", "open now" and "overdue" are relative to 2026-09-30.
+  - "Q1-Q4" are fiscal quarters (FY starts Oct 1).
+  - Plants: CLB = Columbus Hydraulics Plant, GVL = Greenville Drivetrain Plant, MTY = Monterrey Machining Plant, WRO = Wroclaw Electrical Plant, PNQ = Pune Fastener Plant. Filter plants on Plant ID, never on a guessed plant name.
+  - "Yield"/"FPY" belongs to the Production space; here "defect rate" is defects found / units sampled.
+
+  ## APPROVED APP NOTES (human decisions and context)
+  - Documents (procedures, contracts, manuals, reports, meeting reviews and minutes) and approved app notes are attached to this space as files. Never answer that documents, minutes or notes are unavailable, or ask for search to be enabled — search the attached files.
+  - Approved app notes are the files named NOTE-<id>.md: decisions and context people added in the Andon app and a reviewer approved. They are the most recent knowledge you have and can change what the right answer is. Each one states its priority (P1, P2 or P3), what it is about, who approved it and when.
+  - Search the approved notes for every question about a specific plant, line, machine, supplier, carrier, customer or CAPA, and for "what should we do / what was decided" questions (meetings, reviews) — in addition to the data and the documents.
+  - Weigh each relevant note by its priority:
+    - P1 = an approved decision or override. Lead with it, and let it change the conclusion: it supersedes an older recommendation in a document (say so, e.g. "PRP-SC-2026-04 recommended X; NOTE-… (P1, approved by … on …) decided Y").
+    - P2 = important context. Include it next to the numbers it explains.
+    - P3 = for information. Mention it only when it is directly relevant to the question.
+  - Always cite the note ID (NOTE-…), its priority, who approved it and when. A note never replaces a number from the data: give the data, then what people decided.
+
+  ## Instructions you must follow when providing summaries
+  - Show rates as percentages with one decimal, PPM as whole numbers, COPQ in USD.
+  - Compare Cpk to the 1.33 capability target and supplier PPM to the contract limit when relevant.
+  - When asked whether a shift, line or machine has a quality problem, give the total for the period asked first (one row or a total column), then the trend by month, so a recent change (a die change, a new work instruction, a CAPA) is not averaged away over the year. When the user gives a specific period ("since <date>"), answer for that period as one figure.
+  - When a number and a document both apply, give the number first, then the document context with its ID.
+
+sample_questions:
+  - Is the night shift on Wroclaw Wire Cut & Crimp producing more crimp defects?
+  - What is our cost of poor quality from porosity since May?
+  - Which CAPAs are overdue and who owns them?
+  - What does the supplier quality agreement say Brightline's PPM limit is?
+  - What is the reaction plan when crimp height is out of spec?
+
+benchmarks:                       # narrative-grounded checks (fact = expected answer per NARRATIVE_BIBLE / data)
+  - question: How many porosity NCRs were opened on or after 2026-05-01?
+    fact: '380'
+    sql: |
+      SELECT MEASURE(`NCR Count`) AS ncrs FROM {G}.quality_ncr_metrics WHERE `Defect Code` = 'Porosity' AND `Opened Date` >= DATE'2026-05-01'
+  - question: What is the cost of poor quality from porosity NCRs since May 2026?
+    fact: ≈ $1.68M
+    sql: |
+      SELECT MEASURE(`COPQ USD`) AS copq FROM {G}.quality_ncr_metrics WHERE `Defect Code` = 'Porosity' AND `Opened Date` >= DATE'2026-05-01'
+  - question: Defect rate on line WRO-L1 C shift since 2026-06-08
+    fact: 13.6%
+    sql: |
+      SELECT MEASURE(`Defect Rate`) AS defect_rate FROM {G}.quality_inspection_metrics WHERE `Line ID` = 'WRO-L1' AND `Shift` = 'C' AND `Inspection Date` >= DATE'2026-06-08'
+  - question: Compare the defect rate by shift on WRO-L1 since June 8, 2026.
+    fact: C 13.6% vs A/B ~1.4–1.5%
+    sql: |
+      SELECT `Shift`, MEASURE(`Defect Rate`) AS defect_rate FROM {G}.quality_inspection_metrics WHERE `Line ID` = 'WRO-L1' AND `Inspection Date` >= DATE'2026-06-08' GROUP BY ALL ORDER BY 1
+  - question: What is the average Cpk for crimp height on WRO-L1 C shift since June 8, 2026?
+    fact: below the 1.33 target
+    sql: |
+      SELECT MEASURE(`Average Cpk`) AS cpk FROM {G}.quality_inspection_metrics WHERE `Line ID` = 'WRO-L1' AND `Shift` = 'C' AND `Characteristic` = 'Crimp height' AND `Inspection Date` >= DATE'2026-06-08'
+  - question: How many 'Bore out of tolerance' NCRs did GVL-L3 have each month from April to September 2026?
+    fact: rising with spindle wear
+    sql: |
+      SELECT `Opened Month`, MEASURE(`NCR Count`) AS ncrs FROM {G}.quality_ncr_metrics WHERE `Line ID` = 'GVL-L3' AND `Defect Code` = 'Bore out of tolerance' AND `Opened Month` BETWEEN DATE'2026-04-01' AND DATE'2026-09-01' GROUP BY ALL ORDER BY 1
+  - question: Which CAPAs are overdue?
+    fact: open CAPAs past their due date at 2026-09-30, incl. CAPA-2026-101, -102 and -103
+    sql: |
+      SELECT capa_id FROM {G}.fact_capa WHERE status <> 'Closed' AND due_date < DATE'2026-09-30' ORDER BY capa_id
+  - question: What is the status and due date of CAPA-2026-103?
+    fact: Open, due 2026-07-23 (past due)
+    sql: |
+      SELECT status, due_date FROM {G}.fact_capa WHERE capa_id = 'CAPA-2026-103'
+  - question: What was Brightline Castings' supplier PPM for FY26?
+    fact: 1,361 PPM (limit 500)
+    sql: |
+      SELECT MEASURE(`Supplier PPM`) AS ppm FROM {G}.supply_supplier_performance_metrics WHERE `Supplier Name` = 'Brightline Castings'
+  - question: What was the most frequent NCR defect code at Monterrey in FY26?
+    fact: Porosity
+    sql: |
+      SELECT `Defect Code`, MEASURE(`NCR Count`) AS ncrs FROM {G}.quality_ncr_metrics WHERE `Plant ID` = 'MTY' GROUP BY ALL ORDER BY ncrs DESC LIMIT 1
+  - question: Which plant had the highest cost of poor quality in FY26 Q4?
+    fact: Greenville Drivetrain Plant
+    sql: |
+      SELECT `Plant Name`, MEASURE(`COPQ USD`) AS copq FROM {G}.quality_ncr_metrics WHERE `Fiscal Quarter` = 'FY26 Q4' GROUP BY ALL ORDER BY copq DESC LIMIT 1
+  - question: Under the Brightline supplier quality agreement, how quickly must a SCAR be answered?
+    fact: 10 business days (SQA-BLC-2023)
+    expect_doc: SQA-BLC-2023
+

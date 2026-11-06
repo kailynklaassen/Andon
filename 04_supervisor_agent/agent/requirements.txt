@@ -1,0 +1,9 @@
+databricks-agentbricks>=0.8      # AgentKit DurableAgentServer: the Agent Server host (durable runs)
+fastapi>=0.129
+uvicorn[standard]>=0.30
+mlflow[databricks]>=3.14      # tracing; 3.14+ writes traces to Unity Catalog tables (GA)
+databricks-sdk>=0.81          # w.postgres (Lakebase credentials), Genie + Foundation Model clients
+openai>=1.50                  # the Foundation Model API speaks the OpenAI protocol
+databricks-openai>=0.6        # DatabricksOpenAI: OpenAI client authenticated as the app
+psycopg[binary]>=3.2          # Lakebase (Postgres) — not pre-installed in the Apps runtime
+pyyaml>=6

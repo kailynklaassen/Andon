@@ -1,0 +1,138 @@
+# Metric view: supply_inventory_metrics   (Genie space: supply_chain)
+# Deployed by 02_create_metric_views as {catalog}.{gold_schema}.supply_inventory_metrics
+# {catalog} / {gold_schema} are filled in from config/demo_config.yml.
+version: 1.1
+source: '{catalog}.{gold_schema}.fact_inventory_daily'
+comment: 'Daily inventory KPIs by warehouse and item. Inventory is a snapshot: for CURRENT inventory filter Snapshot Date to the latest date (2026-09-30); the ''Average Daily'' measures are safe across
+  date ranges.'
+dimensions:
+- name: Snapshot Date
+  expr: snapshot_date
+  comment: Calendar date of the snapshot.
+  display_name: Snapshot Date
+  synonyms:
+  - snapshot day
+  - date
+- name: Snapshot Month
+  expr: snapshot_month
+  comment: First day of the calendar month of the snapshot.
+  display_name: Snapshot Month
+  synonyms:
+  - month
+- name: Fiscal Quarter
+  expr: fiscal_quarter
+  comment: 'KK''s Parts fiscal quarter, e.g. ''FY26 Q3''. Fiscal year starts Oct 1: Q1 Oct-Dec, Q2 Jan-Mar, Q3 Apr-Jun, Q4 Jul-Sep.'
+  display_name: Fiscal Quarter
+  synonyms:
+  - quarter
+  - fiscal period
+  - FQ
+- name: Warehouse ID
+  expr: warehouse_id
+  comment: WH-<plant> plant warehouses; DC-MEM Memphis, DC-RNO Reno, DC-RTM Rotterdam distribution centers.
+  display_name: Warehouse ID
+  synonyms:
+  - DC
+  - location code
+- name: Warehouse Name
+  expr: warehouse_name
+  comment: Warehouse name.
+  display_name: Warehouse Name
+  synonyms:
+  - warehouse
+  - distribution center
+- name: Warehouse Type
+  expr: warehouse_type
+  comment: Plant or Distribution Center.
+  display_name: Warehouse Type
+  synonyms:
+  - location type
+- name: Region
+  expr: region
+  comment: Warehouse region.
+  display_name: Region
+  synonyms:
+  - geography
+- name: Item ID
+  expr: item_id
+  comment: Part number (finished good) or MAT-xxxx (raw material).
+  display_name: Item ID
+  synonyms:
+  - SKU
+  - item
+- name: Item Type
+  expr: item_type
+  comment: Finished Good or Raw Material.
+  display_name: Item Type
+  synonyms:
+  - inventory type
+- name: Item Name
+  expr: item_name
+  comment: Item description.
+  display_name: Item Name
+  synonyms:
+  - item description
+  - product
+  - material
+- name: Item Category
+  expr: item_category
+  comment: Product family (FG) or material category (RM).
+  display_name: Item Category
+  synonyms:
+  - category
+- name: Supplier ID
+  expr: supplier_id
+  comment: Primary supplier for raw materials.
+  display_name: Supplier ID
+  synonyms:
+  - vendor
+measures:
+- name: Item Days
+  expr: COUNT(1)
+  comment: Warehouse-item-day snapshots.
+  display_name: Item Days
+- name: Average Daily On-Hand Qty
+  expr: SUM(on_hand_qty) / COUNT(DISTINCT snapshot_date)
+  comment: Average on-hand quantity per day over the selected dates.
+  display_name: Average Daily On-Hand Qty
+  synonyms:
+  - on hand
+  - inventory level
+  - stock on hand
+- name: Average Daily Inventory Value USD
+  expr: SUM(inventory_value_usd) / COUNT(DISTINCT snapshot_date)
+  comment: Average inventory value per day, USD.
+  display_name: Average Daily Inventory Value USD
+  synonyms:
+  - inventory value
+  - stock value
+  format:
+    type: currency
+    currency_code: USD
+    decimal_places:
+      type: max
+      places: 0
+- name: Stockout Item Days
+  expr: COUNT(1) FILTER (WHERE is_stockout)
+  comment: Item-days where on-hand < allocated (stockout).
+  display_name: Stockout Item Days
+  synonyms:
+  - stockouts
+  - stock-outs
+- name: Stockout Rate
+  expr: MEASURE(`Stockout Item Days`) / MEASURE(`Item Days`)
+  comment: Share of item-days in stockout.
+  display_name: Stockout Rate
+  synonyms:
+  - stockout %
+  format:
+    type: percentage
+    decimal_places:
+      type: max
+      places: 1
+- name: Below Safety Stock Item Days
+  expr: COUNT(1) FILTER (WHERE is_below_safety_stock)
+  comment: Item-days below safety stock.
+  display_name: Below Safety Stock Item Days
+  synonyms:
+  - below safety stock

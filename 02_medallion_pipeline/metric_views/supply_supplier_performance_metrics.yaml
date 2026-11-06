@@ -1,0 +1,163 @@
+# Metric view: supply_supplier_performance_metrics   (Genie space: supply_chain)
+# Deployed by 02_create_metric_views as {catalog}.{gold_schema}.supply_supplier_performance_metrics
+# {catalog} / {gold_schema} are filled in from config/demo_config.yml.
+version: 1.1
+source: '{catalog}.{gold_schema}.fact_supplier_receipt'
+comment: 'Supplier delivery and incoming-quality KPIs per PO line: on-time delivery (OTD), days late, PPM vs the supplier quality agreement limit, and spend, by supplier, material, plant and period.'
+dimensions:
+- name: Promised Month
+  expr: promised_month
+  comment: Month the supplier promised delivery.
+  display_name: Promised Month
+  synonyms:
+  - month
+  - delivery month
+- name: Fiscal Quarter
+  expr: fiscal_quarter
+  comment: Fiscal quarter of the promised date, e.g. 'FY26 Q3' (FY starts Oct 1).
+  display_name: Fiscal Quarter
+  synonyms:
+  - quarter
+- name: Order Date
+  expr: order_date
+  comment: PO order date.
+  display_name: Order Date
+  synonyms:
+  - PO date
+- name: Receipt Date
+  expr: receipt_date
+  comment: Goods receipt date.
+  display_name: Receipt Date
+  synonyms:
+  - received date
+- name: Supplier ID
+  expr: supplier_id
+  comment: Supplier code, e.g. SUP-1007.
+  display_name: Supplier ID
+  synonyms:
+  - vendor id
+- name: Supplier Name
+  expr: supplier_name
+  comment: Supplier name, e.g. 'Brightline Castings'.
+  display_name: Supplier Name
+  synonyms:
+  - supplier
+  - vendor
+- name: Supplier Country
+  expr: supplier_country
+  comment: Supplier country.
+  display_name: Supplier Country
+  synonyms:
+  - country
+- name: Supplier Category
+  expr: supplier_category
+  comment: Commodity category, e.g. Castings, Bearings.
+  display_name: Supplier Category
+  synonyms:
+  - commodity
+  - category
+- name: PPM Limit
+  expr: quality_agreement_ppm_limit
+  comment: Contractual PPM limit in the supplier quality agreement.
+  display_name: PPM Limit
+  synonyms:
+  - contract PPM
+- name: Material Name
+  expr: material_name
+  comment: Purchased material.
+  display_name: Material Name
+  synonyms:
+  - material
+  - item
+- name: Plant Name
+  expr: plant_name
+  comment: Receiving plant.
+  display_name: Plant Name
+  synonyms:
+  - plant
+  - site
+- name: Inspection Result
+  expr: inspection_result
+  comment: ACCEPT, ACCEPT WITH DEVIATION, REJECT.
+  display_name: Inspection Result
+  synonyms:
+  - incoming result
+measures:
+- name: PO Lines
+  expr: COUNT(1)
+  comment: Purchase order lines.
+  display_name: PO Lines
+  synonyms:
+  - purchase orders
+  - POs
+- name: Receipts
+  expr: COUNT(1) FILTER (WHERE is_received)
+  comment: PO lines received.
+  display_name: Receipts
+  synonyms:
+  - deliveries
+- name: On-Time Receipts
+  expr: COUNT(1) FILTER (WHERE is_on_time)
+  comment: Receipts on or before the promised date.
+  display_name: On-Time Receipts
+  synonyms:
+  - on time deliveries
+- name: Supplier OTD
+  expr: MEASURE(`On-Time Receipts`) / MEASURE(`Receipts`)
+  comment: Supplier on-time delivery = on-time receipts / receipts. Target 95%.
+  display_name: Supplier OTD
+  synonyms:
+  - on-time delivery
+  - OTD
+  - delivery performance
+  format:
+    type: percentage
+    decimal_places:
+      type: max
+      places: 1
+- name: Average Days Late
+  expr: AVG(days_late) FILTER (WHERE days_late > 0)
+  comment: Average days late, for late receipts only.
+  display_name: Average Days Late
+  synonyms:
+  - lateness
+  - days late
+- name: Received Qty
+  expr: SUM(received_qty)
+  comment: Units received.
+  display_name: Received Qty
+  synonyms:
+  - quantity received
+- name: Rejected Qty
+  expr: SUM(rejected_qty)
+  comment: Units rejected at incoming inspection.
+  display_name: Rejected Qty
+  synonyms:
+  - rejects
+- name: Supplier PPM
+  expr: MEASURE(`Rejected Qty`) * 1000000.0 / MEASURE(`Received Qty`)
+  comment: Rejected parts per million received.
+  display_name: Supplier PPM
+  synonyms:
+  - PPM
+  - defect PPM
+  - quality PPM
+- name: PO Spend USD
+  expr: SUM(po_value_usd)
+  comment: Purchase order value, USD.
+  display_name: PO Spend USD
+  synonyms:
+  - spend
+  - purchase spend
+  format:
+    type: currency
+    currency_code: USD
+    decimal_places:
+      type: max
+      places: 0
+- name: Open PO Lines
+  expr: COUNT(1) FILTER (WHERE NOT is_received)
+  comment: PO lines not yet received.
+  display_name: Open PO Lines
+  synonyms:
+  - open POs

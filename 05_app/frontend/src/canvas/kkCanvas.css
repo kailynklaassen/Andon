@@ -1,0 +1,43 @@
+/* Plant floor + Impact Web canvas styles (extracted from the original Streamlit component). */
+
+:host { display:block; }
+.kkc { position:relative; width:100%; border-radius:18px; overflow:hidden; user-select:none;
+  background: radial-gradient(1200px 500px at 30% 0%, #183A73 0%, #0A1F44 55%, #071533 100%);
+  box-shadow: 0 18px 50px rgba(10,31,68,.28); font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
+.kkc svg { width:100%; height:100%; display:block; cursor:grab; }
+.kkc svg.dragging { cursor:grabbing; }
+.kkc .grid line { stroke:#FFFFFF; stroke-opacity:.05; }
+.kkc .hud { position:absolute; left:12px; top:10px; background:rgba(7,21,51,.78); backdrop-filter:blur(6px); padding:6px 12px; border-radius:999px; border:1px solid rgba(255,255,255,.12); color:#D5DEEC; font-size:11px; letter-spacing:.14em; text-transform:uppercase; font-weight:700; pointer-events:none; }
+.kkc .hud b { color:#fff; }
+.kkc .help { position:absolute; right:12px; top:10px; background:rgba(7,21,51,.78); backdrop-filter:blur(6px); padding:6px 12px; border-radius:999px; color:#9FB0CB; font-size:11px; pointer-events:none; }
+.kkc .zoombar { position:absolute; right:12px; top:50px; flex-direction:column; display:flex; gap:6px; }
+.kkc .zoombar button { background:rgba(255,255,255,.10); color:#fff; border:1px solid rgba(255,255,255,.22); border-radius:8px;
+  width:30px; height:30px; font-size:15px; cursor:pointer; }
+.kkc .zoombar button:hover { background:#D62839; border-color:#D62839; }
+.kkc .legend { position:absolute; left:12px; bottom:12px; background:rgba(7,21,51,.78); padding:6px 12px; border-radius:999px; display:flex; gap:14px; color:#B9C6DA; font-size:11px; pointer-events:none; }
+.kkc .legend i { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; vertical-align:-1px; }
+.kkc .tip { position:absolute; pointer-events:none; background:#fff; color:#0B1324; border-radius:12px; padding:10px 12px;
+  box-shadow:0 12px 30px rgba(0,0,0,.35); font-size:12px; line-height:1.45; max-width:280px; opacity:0; transition:opacity .12s;
+  border-top:4px solid #0A1F44; z-index:5; }
+.kkc .tip.show { opacity:1; }
+.kkc .tip h5 { margin:0 0 4px; font-size:13px; color:#0A1F44; }
+.kkc .tip .k { color:#5B6B82; }
+.kkc .tip .issue { margin-top:6px; color:#D62839; font-weight:600; }
+.bay { cursor:pointer; }
+.bay rect.bg { fill:rgba(255,255,255,.035); stroke:rgba(255,255,255,.12); transition: fill .2s; }
+.bay:hover rect.bg { fill:rgba(255,255,255,.07); }
+.bay.focus rect.bg { stroke:#D62839; stroke-width:2; fill:rgba(255,255,255,.06); }
+.node { cursor:pointer; }
+.node rect.card { fill:#fff; transition: transform .15s; }
+.node:hover rect.card { fill:#F4F7FC; }
+.node.sel rect.ring { stroke:#D62839; stroke-width:3; }
+.conv { fill:none; stroke-linecap:round; }
+.flow { fill:none; stroke-dasharray:2 14; stroke-linecap:round; animation: kkflow linear infinite; }
+@keyframes kkflow { to { stroke-dashoffset:-160; } }
+.pulse { animation: kkpulse 1.6s ease-out infinite; transform-box: fill-box; transform-origin:center; }
+@keyframes kkpulse { 0% { opacity:.85; transform:scale(1); } 100% { opacity:0; transform:scale(1.9); } }
+.dock rect { fill:rgba(255,255,255,.05); stroke:rgba(255,255,255,.14); }
+.wnode { cursor:pointer; }
+.wnode text { pointer-events:none; }
+.wedge { fill:none; }
+.dim { opacity:.12; transition: opacity .25s; }

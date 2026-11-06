@@ -1,0 +1,40 @@
+# Databricks App: kkparts-foreman — the Foreman supervisor agent on the Agent Server (AgentKit DurableAgentServer, GA)
+#
+# Resources (04_supervisor_agent/02_deploy_agent_app declares them; they grant the app's service principal access):
+#   genie-production / -quality / -maintenance / -supply-chain → CAN_RUN   the four domain Genie spaces (the tools)
+#   sql-warehouse        → CAN_USE                  the warehouse Genie runs its SQL on
+#   experiment           → CAN_EDIT                 where every request's MLflow trace is written
+#   postgres             → CAN_CONNECT_AND_CREATE   Lakebase kkparts-hitl: sessions + long-term memory (schema foreman)
+# Unity Catalog: with genie_auth = on_behalf_of_user Genie runs as the person asking (their grants apply). For
+# service_principal mode the app has SELECT/EXECUTE on gold and READ VOLUME on the documents + notes volumes.
+# The Foundation Models need no grant (pay-per-token).
+command:
+- uvicorn
+- server:app
+- --host
+- 0.0.0.0
+- --port
+- '8000'
+env:
+- name: MLFLOW_EXPERIMENT_ID
+  valueFrom: experiment
+- name: LAKEBASE_ENDPOINT_PATH
+  value: projects/kkparts-hitl/branches/production/endpoints/primary
+- name: FOREMAN_SCHEMA
+  value: foreman
+- name: FOREMAN_ROUTER_LLM
+  value: databricks-claude-haiku-5-5
+- name: FOREMAN_ANSWER_LLM
+  value: databricks-claude-sonnet-5
+- name: FOREMAN_GENIE_AUTH
+  value: on_behalf_of_user
+- name: FOREMAN_GENIE_MODE
+  value: agent
+- name: DATABRICKS_AGENTBRICKS_RUNTIME_STORE_LAKEBASE_ENDPOINT
+  value: projects/kkparts-hitl/branches/production/endpoints/primary
+- name: DATABRICKS_AGENTBRICKS_RUNTIME_STORE_SCHEMA
+  value: foreman_runtime
+- name: MLFLOW_TRACING_SQL_WAREHOUSE_ID
+  valueFrom: sql-warehouse
+- name: FOREMAN_TRACE_TABLES
+  value: your_catalog.mfg_traces.foreman_otel_spans

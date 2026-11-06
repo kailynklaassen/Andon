@@ -1,0 +1,168 @@
+# Metric view: quality_inspection_metrics   (Genie space: quality)
+# Deployed by 02_create_metric_views as {catalog}.{gold_schema}.quality_inspection_metrics
+# {catalog} / {gold_schema} are filled in from config/demo_config.yml.
+version: 1.1
+source: '{catalog}.{gold_schema}.fact_quality_inspection'
+comment: In-process inspection and SPC KPIs (one inspection per line per shift). Use for defect rate, inspection pass/fail, and process capability (Cpk) by line, shift, defect code, and period.
+dimensions:
+- name: Inspection Date
+  expr: inspection_date
+  comment: Calendar date of the inspection.
+  display_name: Inspection Date
+  synonyms:
+  - inspection day
+  - date
+- name: Inspection Month
+  expr: inspection_month
+  comment: First day of the calendar month of the inspection.
+  display_name: Inspection Month
+  synonyms:
+  - month
+- name: Fiscal Quarter
+  expr: fiscal_quarter
+  comment: 'KK''s Parts fiscal quarter, e.g. ''FY26 Q3''. Fiscal year starts Oct 1: Q1 Oct-Dec, Q2 Jan-Mar, Q3 Apr-Jun, Q4 Jul-Sep.'
+  display_name: Fiscal Quarter
+  synonyms:
+  - quarter
+  - fiscal period
+  - FQ
+- name: Shift
+  expr: shift
+  comment: 'Shift: A, B, C (night 22:00-06:00).'
+  display_name: Shift
+  synonyms:
+  - crew
+- name: Plant ID
+  expr: plant_id
+  comment: 'Plant code: CLB Columbus, GVL Greenville, MTY Monterrey, WRO Wroclaw, PNQ Pune.'
+  display_name: Plant ID
+  synonyms:
+  - site code
+  - plant code
+- name: Plant Name
+  expr: plant_name
+  comment: Plant name, e.g. 'Greenville Drivetrain Plant'.
+  display_name: Plant Name
+  synonyms:
+  - plant
+  - site
+  - factory
+  - facility
+- name: Line ID
+  expr: line_id
+  comment: Production line code, e.g. GVL-L3.
+  display_name: Line ID
+  synonyms:
+  - line code
+- name: Line Name
+  expr: line_name
+  comment: Production line name, e.g. 'Gearbox Assembly'.
+  display_name: Line Name
+  synonyms:
+  - line
+  - production line
+  - cell
+- name: Part Number
+  expr: part_number
+  comment: Part being produced when inspected.
+  display_name: Part Number
+  synonyms:
+  - part
+  - SKU
+- name: Defect Code
+  expr: primary_defect_code
+  comment: Primary defect found, e.g. 'Crimp height out of spec', 'Porosity', 'Bore out of tolerance'.
+  display_name: Defect Code
+  synonyms:
+  - defect
+  - defect type
+  - failure code
+- name: Inspection Result
+  expr: result
+  comment: PASS or FAIL (FAIL = more than 2 defects in the sample).
+  display_name: Inspection Result
+  synonyms:
+  - result
+  - pass fail
+- name: Characteristic
+  expr: characteristic
+  comment: Critical-to-quality characteristic measured, e.g. 'Crimp height'.
+  display_name: Characteristic
+  synonyms:
+  - CTQ
+  - measurement
+measures:
+- name: Inspections
+  expr: COUNT(1)
+  comment: Number of inspections.
+  display_name: Inspections
+  synonyms:
+  - inspection count
+- name: Failed Inspections
+  expr: COUNT(1) FILTER (WHERE NOT is_pass)
+  comment: Inspections with result FAIL.
+  display_name: Failed Inspections
+  synonyms:
+  - failures
+- name: Inspection Fail Rate
+  expr: MEASURE(`Failed Inspections`) / MEASURE(`Inspections`)
+  comment: Failed / total inspections.
+  display_name: Inspection Fail Rate
+  synonyms:
+  - fail rate
+  format:
+    type: percentage
+    decimal_places:
+      type: max
+      places: 1
+- name: Units Sampled
+  expr: SUM(sample_size)
+  comment: Units inspected in samples.
+  display_name: Units Sampled
+  synonyms:
+  - sample size
+- name: Defects Found
+  expr: SUM(defects_found)
+  comment: Defective units found in samples.
+  display_name: Defects Found
+  synonyms:
+  - defects
+- name: Defect Rate
+  expr: MEASURE(`Defects Found`) / MEASURE(`Units Sampled`)
+  comment: Defects found / units sampled.
+  display_name: Defect Rate
+  synonyms:
+  - defect %
+  - reject rate
+  format:
+    type: percentage
+    decimal_places:
+      type: max
+      places: 1
+- name: Defect PPM
+  expr: MEASURE(`Defects Found`) * 1000000.0 / MEASURE(`Units Sampled`)
+  comment: Defective parts per million sampled.
+  display_name: Defect PPM
+  synonyms:
+  - PPM
+  - parts per million
+- name: Average Cpk
+  expr: AVG(cpk)
+  comment: Average process capability index. Below 1.33 = not capable.
+  display_name: Average Cpk
+  synonyms:
+  - Cpk
+  - process capability
+  - capability
+- name: Average Measured Value
+  expr: AVG(measured_mean)
+  comment: Average measured value of the characteristic (in its unit of measure).
+  display_name: Average Measured Value
+  synonyms:
+  - mean measurement
+- name: Low Capability Inspections
+  expr: COUNT(1) FILTER (WHERE cpk < 1.33)
+  comment: Inspections where Cpk < 1.33.
+  display_name: Low Capability Inspections
+  synonyms:
+  - incapable samples

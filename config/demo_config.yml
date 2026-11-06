@@ -1,0 +1,282 @@
+# =============================================================================
+#  Manufacturing Agentic Framework Demo — the ONE file you edit
+# =============================================================================
+#  Every step in run/ reads this file (via config/config.py). Change a value here
+#  and the data generator, pipeline, Genie spaces, supervisor agent, and app all
+#  pick it up. Nothing downstream hardcodes a catalog, schema, or ID.
+#
+#  Sections:
+#    workspace   -> where things land in Unity Catalog
+#    data        -> size + time window of the synthetic data
+#    company     -> the fictional manufacturer (plants, lines, warehouses)
+#    story       -> the "planted" problems the agents should discover
+#    genie       -> the four domain-focused Genie spaces
+#    supervisor  -> the custom supervisor agent (Agent Bricks, code-first)
+#    hitl        -> the app's human-in-the-loop loop: Lakebase ledger → lakehouse sync
+# =============================================================================
+
+workspace:
+  catalog: your_catalog                # CHANGE ME — must already exist; you need USE/CREATE on it
+  schemas:
+    landing: mfg_landing              # UC Volumes holding raw files (the "source systems")
+    bronze: mfg_bronze                # raw files ingested as-is (Auto Loader streaming tables)
+    silver: mfg_silver                # cleaned, typed, conformed
+    gold: mfg_gold                    # business-level materialized views + metric views
+    app: mfg_app                      # Delta mirror of the app's human-in-the-loop ledger (Lakebase → lakehouse)
+  volumes:
+    raw: raw_data                     # /Volumes/<catalog>/<landing>/raw_data/<source_system>/<entity>/
+    docs_prefix: genie_docs           # one volume PER Genie space: genie_docs_production, genie_docs_quality, ...
+                                      # (Genie builds one document index per volume, so domains can't share one)
+  warehouse_name: kkparts-demo        # the SQL warehouse Genie, the agent and the app run on (looked up by name)
+  warehouse_id: ""                    # or pin an ID (wins over the name); both blank = first serverless warehouse
+
+data:
+  seed: 42                            # same seed -> same data -> documents stay accurate
+  start_date: "2025-10-01"            # FY2026 window; the documents reference dates inside it
+  end_date: "2026-09-30"
+  telemetry_interval_minutes: 60      # 60 ≈ 1M sensor rows; 15 ≈ 4M rows
+  sales_order_lines_per_day: 45
+
+# -----------------------------------------------------------------------------
+# The fictional manufacturer. Plants -> lines -> work centers (machines) is the
+# physical hierarchy the app will let you drill into later. Each line's
+# `process_flow` is the ordered list of work-center types material moves through.
+# -----------------------------------------------------------------------------
+company:
+  name: "KK's Parts"
+  short_name: "KK's Parts"
+  plants:
+    - plant_id: CLB
+      name: "Columbus Hydraulics Plant"
+      city: "Columbus"
+      state_country: "OH, USA"
+      region: "North America"
+      lat: 39.9612
+      lon: -82.9988
+      product_family: "Hydraulic Components"
+      pm_compliance_target: 0.97       # Columbus is the "well-run" benchmark plant
+      lines:
+        - { line_id: CLB-L1, name: "Valve Body Machining", process_flow: [CNC_MILL, CNC_MILL, DEBURR_CELL, WASH_STATION, CMM_INSPECTION] }
+        - { line_id: CLB-L2, name: "Pump Assembly",        process_flow: [PRESS_FIT, ASSEMBLY_CELL, ASSEMBLY_CELL, TEST_STAND, PACKAGING] }
+        - { line_id: CLB-L3, name: "Cylinder Fabrication",  process_flow: [SAW_CELL, CNC_LATHE, ROBOTIC_WELDER, PAINT_BOOTH, TEST_STAND] }
+    - plant_id: GVL
+      name: "Greenville Drivetrain Plant"
+      city: "Greenville"
+      state_country: "SC, USA"
+      region: "North America"
+      lat: 34.8526
+      lon: -82.3940
+      product_family: "Gears & Drivetrain"
+      pm_compliance_target: 0.84
+      lines:
+        - { line_id: GVL-L1, name: "Gear Hobbing",      process_flow: [CNC_LATHE, GEAR_HOBBER, GEAR_HOBBER, DEBURR_CELL, CMM_INSPECTION] }
+        - { line_id: GVL-L2, name: "Heat Treat",        process_flow: [WASH_STATION, HEAT_TREAT_FURNACE, HEAT_TREAT_FURNACE, QUENCH_TANK, HARDNESS_TESTER] }
+        - { line_id: GVL-L3, name: "Gearbox Assembly",  process_flow: [CNC_MACHINING_CENTER, CNC_MACHINING_CENTER, PRESS_FIT, ASSEMBLY_CELL, TEST_STAND, PACKAGING] }
+    - plant_id: MTY
+      name: "Monterrey Machining Plant"
+      city: "Monterrey"
+      state_country: "NL, Mexico"
+      region: "North America"
+      lat: 25.6866
+      lon: -100.3161
+      product_family: "Machined Housings"
+      pm_compliance_target: 0.90
+      lines:
+        - { line_id: MTY-L1, name: "Casting Finishing",  process_flow: [SAW_CELL, SHOT_BLAST, CNC_MILL, CMM_INSPECTION] }
+        - { line_id: MTY-L2, name: "Housing Machining",  process_flow: [CNC_MACHINING_CENTER, CNC_MACHINING_CENTER, CNC_MACHINING_CENTER, WASH_STATION, LEAK_TESTER] }
+        - { line_id: MTY-L3, name: "Paint & Coat",       process_flow: [WASH_STATION, PAINT_BOOTH, CURE_OVEN, PACKAGING] }
+    - plant_id: WRO
+      name: "Wroclaw Electrical Plant"
+      city: "Wroclaw"
+      state_country: "Poland"
+      region: "Europe"
+      lat: 51.1079
+      lon: 17.0385
+      product_family: "Wire Harnesses & Controls"
+      pm_compliance_target: 0.92
+      lines:
+        - { line_id: WRO-L1, name: "Wire Cut & Crimp",          process_flow: [WIRE_CUTTER, CRIMP_PRESS, CRIMP_PRESS, PULL_TESTER] }
+        - { line_id: WRO-L2, name: "Harness Assembly",          process_flow: [ASSEMBLY_CELL, ASSEMBLY_CELL, CONTINUITY_TESTER, PACKAGING] }
+        - { line_id: WRO-L3, name: "Control Module Assembly",   process_flow: [SMT_PLACER, REFLOW_OVEN, AOI_INSPECTION, ASSEMBLY_CELL, TEST_STAND] }
+    - plant_id: PNQ
+      name: "Pune Fastener Plant"
+      city: "Pune"
+      state_country: "MH, India"
+      region: "Asia Pacific"
+      lat: 18.5204
+      lon: 73.8567
+      product_family: "Precision Fasteners & Stampings"
+      pm_compliance_target: 0.91
+      lines:
+        - { line_id: PNQ-L1, name: "Cold Heading",        process_flow: [WIRE_DRAWER, COLD_HEADER, THREAD_ROLLER, OPTICAL_SORTER] }
+        - { line_id: PNQ-L2, name: "Stamping",            process_flow: [COIL_FEEDER, STAMPING_PRESS, STAMPING_PRESS, DEBURR_CELL, PACKAGING] }
+        - { line_id: PNQ-L3, name: "Plating & Finishing", process_flow: [WASH_STATION, PLATING_TANK, CURE_OVEN, OPTICAL_SORTER] }
+
+  # Distribution centers (each plant also gets an on-site plant warehouse automatically).
+  distribution_centers:
+    - { warehouse_id: DC-MEM, name: "Memphis Distribution Center",   city: "Memphis",   state_country: "TN, USA",     region: "North America", lat: 35.1495, lon: -90.0490 }
+    - { warehouse_id: DC-RNO, name: "Reno Distribution Center",      city: "Reno",      state_country: "NV, USA",     region: "North America", lat: 39.5296, lon: -119.8138 }
+    - { warehouse_id: DC-RTM, name: "Rotterdam Distribution Center", city: "Rotterdam", state_country: "Netherlands", region: "Europe",        lat: 51.9244, lon: 4.4777 }
+
+# -----------------------------------------------------------------------------
+# The planted storylines. The generator bends the data to create these patterns,
+# and the Genie documents are written around the exact same names/numbers — so
+# the supervisor can connect a SQL answer ("OEE dropped") to a document answer
+# ("because the PM interval conflicts with the OEM manual").
+# -----------------------------------------------------------------------------
+story:
+  failing_machine:                    # Maintenance + Production storyline
+    machine_id: GVL-L3-WC01           # 1st CNC machining center on Greenville Gearbox Assembly
+    degradation_start: "2026-03-15"   # spindle bearing wear begins; vibration drifts up
+    oem: "Hartwell Machine Tools"
+    oem_vibration_limit_mm_s: 4.5     # OEM manual: replace spindle bearings above this
+    internal_pm_limit_mm_s: 7.1       # KK's Parts PM procedure (outdated) uses a looser limit
+  problem_supplier:                   # Supply Chain + Quality storyline
+    supplier_id: SUP-1007
+    name: "Brightline Castings"
+    issue_start: "2026-05-01"         # porosity defects + late deliveries begin
+    contract_ppm_limit: 500           # supplier quality agreement allows 500 PPM defects
+    contract_on_time_target: 0.95
+  problem_carrier:                    # Supply Chain (outbound logistics) storyline
+    carrier_id: CAR-04
+    name: "Ridgeway Freight"
+    lane_origin: DC-MEM
+    sla_on_time_target: 0.95
+  quality_shift_issue:                # Quality storyline
+    machine_id: WRO-L1-WC02           # first crimp press on Wroclaw Wire Cut & Crimp
+    shift: C                          # night shift crimp-height defects after a die change
+    start: "2026-06-08"
+
+# -----------------------------------------------------------------------------
+# Four domain-focused Genie spaces. Each one = one gold metric view + its own
+# supporting tables + its own document folder in the genie_docs volume.
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Unity Catalog governance: who can see which domain, enforced everywhere
+# (SQL, Genie, the supervisor — because the supervisor calls Genie on behalf of the user).
+#   * groups      account-level groups; each lists the Genie domains it may use
+#   * domain tags tag `kkparts_domain` on every gold table → drives the grants
+#   * ABAC        a governed tag on the confidential columns + one column-mask policy on the schema:
+#                 everyone outside `confidential.visible_to` sees NULL for those columns
+# -----------------------------------------------------------------------------
+governance:
+  admin_email: you@example.com          # CHANGE ME
+  groups:
+    - { name: kkparts_admins,       domains: [production, quality, maintenance, supply_chain], members: ["{admin}"] }
+    - { name: kkparts_production,   domains: [production],   members: ["you+production@example.com"] }
+    - { name: kkparts_quality,      domains: [quality],      members: ["you+quality@example.com"] }
+    - { name: kkparts_maintenance,  domains: [maintenance],  members: ["you+maintenance@example.com"] }
+    - { name: kkparts_supply_chain, domains: [supply_chain], members: ["you+supplychain@example.com"] }
+    - { name: kkparts_plant_ops,    domains: [production, maintenance, quality], members: ["you+plantops@example.com"] }
+  confidential:                       # ABAC column mask on commercially sensitive fields
+    tag: kkparts_data_class          # governed tag (value 'confidential'), created if missing ...
+    fallback_tag: class.compensation  # ... or this system governed tag if the account is at its governed-tag limit
+    visible_to: [kkparts_admins, kkparts_supply_chain]   # procurement owns supplier/customer commercials
+    columns:
+      fact_supplier_receipt: [unit_price_usd, po_value_usd]    # negotiated supplier prices / spend
+      fact_shipment:         [order_value_usd]                 # customer order values
+      dim_part:              [standard_cost_usd, list_price_usd]
+      dim_material:          [standard_cost_usd]
+
+# -----------------------------------------------------------------------------
+# Documents → each Genie space reads its domain's PDFs directly: the genie_docs_<domain> volume is attached to the
+# space ("Analyze files in volumes", Public Preview) and Genie Agent mode searches the files (see genie.attach_documents).
+# -----------------------------------------------------------------------------
+
+genie:
+  # Genie "Analyze files in volumes" (Public Preview; Agent mode): each space gets its documents volume and its approved-notes
+  # volume attached, so Agent mode reads the files directly (no search functions needed).
+  attach_documents: true              # genie_docs_<domain>
+  attach_app_notes: true              # app_notes_<domain>
+  spaces:
+    - key: production
+      title: "KK's Parts Production & OEE"
+      docs_folder: production
+    - key: quality
+      title: "KK's Parts Quality & Compliance"
+      docs_folder: quality
+    - key: maintenance
+      title: "KK's Parts Maintenance & Reliability"
+      docs_folder: maintenance
+    - key: supply_chain
+      title: "KK's Parts Supply Chain & Warehousing"
+      docs_folder: supply_chain
+
+supervisor:
+  name: kkparts-ops-supervisor                 # used for the workspace folder and the MLflow experiment name
+  router_llm: databricks-claude-haiku-5-5       # FAST model: picks the experts + writes their questions (and routes notes)
+  answer_llm: databricks-claude-sonnet-5        # STRONG model: writes the answer from the evidence
+  app_name: kkparts-foreman                     # the Agent Server (AgentKit DurableAgentServer) on Databricks Apps
+  memory: true                                  # OPTIONAL: sessions + long-term memory in Lakebase (needs hitl.lakebase)
+  memory_schema: foreman                        # Postgres schema the agent app creates and owns
+  runtime_store_schema: foreman_runtime         # Agent Server (AgentKit DurableAgentServer) run state: invocations,
+                                                # their events and results — survives restarts, lets clients reconnect
+  genie_mode: agent                             # how Foreman asks Genie: agent = Agent-mode API (GA; plans several
+                                                # queries, searches attached files; answered the S&OP question in 25 s
+                                                # where chat mode refused it) · chat = Conversation API (one SQL answer)
+  genie_auth: on_behalf_of_user                 # who Genie runs as. on_behalf_of_user (Apps user authorization, GA):
+                                                # the Andon app passes the signed-in person's Genie-scoped token, so
+                                                # Genie sees exactly what THAT person may see (their groups, the ABAC
+                                                # mask). service_principal: Genie runs as the Foreman app for everyone.
+                                                # Models, memory and tracing always run as the app's service principal.
+  traces:                                       # CRUCIAL: where every trace lands — Unity Catalog tables (GA)
+    schema: mfg_traces                          # <catalog>.<schema>.<table_prefix>_otel_spans / _logs / _metrics / _annotations
+    table_prefix: foreman
+    experiment: foreman_traces_uc               # bound to the UC location at creation (it can't be re-pointed later)
+  max_iterations: 6                             # max plan -> call Genie -> observe loops per question
+  max_tool_rounds: 2                            # rounds of Genie calls before Foreman must answer (each costs 20-60 s)
+  genie_timeout_seconds: 300                    # per Genie call (Agent mode with documents can take minutes)
+
+# -----------------------------------------------------------------------------
+# Human in the loop (05_app + 06_human_in_the_loop)
+#   app submits → Lakebase hitl.actions → reviewer approves → hitl.approved_actions (the outbox)
+#   → scheduled sync job:  value changes → <landing>.app_corrections_<table> → pipeline append flow → bronze_<table>
+#                                          (flagged _altered_in_app, _app_action_id) → silver → gold
+#                          notes         → routed to 1-2 domains → app_notes_<domain>/NOTE-….md → attached to that Genie space
+#                          everything    → Delta mirror in <app schema> + sync status written back to Lakebase
+# Lakebase "Lakehouse Sync" (native CDC to Delta) is Beta, so the sync is a plain scheduled job (GA).
+# -----------------------------------------------------------------------------
+app:
+  dashboard_embed_url: ""                      # OPTIONAL: a published AI/BI dashboard to show as a tab on the Andon Board
+  admins: ["{admin}"]                          # who sees the App & agent health page ({admin} = whoever deploys)
+
+hitl:
+  app_name: kkparts-andon                      # the Databricks App (05_app)
+  lakebase:
+    project: kkparts-hitl                       # Lakebase Autoscaling project (created by 06/00_setup if missing)
+    branch: production
+    endpoint: primary
+    database: databricks-postgres               # database resource id (Postgres name: databricks_postgres)
+    postgres_database: databricks_postgres      # the Postgres database name the jobs connect to
+    schema: andon                               # created and owned by the app's service principal (kkparts-andon)
+  sync:
+    job_name: kkparts-hitl-sync
+    cron: "0 0/30 * * * ?"                      # every 30 minutes (Quartz); the job is also triggerable on demand
+    timezone: UTC
+    refresh_pipeline: true                      # run the medallion pipeline after value changes land
+  notes:                                        # approved comments/decisions → the Genie space(s) they are about
+    volume_prefix: app_notes                    # ONE volume per Genie space: <landing>.app_notes_<domain>, attached to
+                                                # the space; each NOTE-<id>.md states its priority (P1 decision ·
+                                                # P2 context · P3 FYI) in the text, which Genie reads
+    routing: supervisor                         # supervisor = Foreman's router model reads the note against the Genie space
+                                                # descriptions (the same routing rule it uses for questions); rules = by
+                                                # action/entity type only. Falls back to rules if the model call fails.
+    max_domains: 2                              # a note can matter to two domains (e.g. a supplier decision → supply chain + quality)
+    index_wait_minutes: 10                      # after writing notes the sync job asks each changed volume's Genie file
+                                                # index to re-sync (it does NOT pick up new files by itself) and waits up
+                                                # to this long for it to finish; 0 = trigger only, don't wait
+  # bronze tables that accept app corrections → the column that identifies a record (what the app's
+  # records catalog points at, 05_app/kk/records.py). One correction table + append flow is created per entry.
+  corrections:
+    bronze_plants: plant_id
+    bronze_production_lines: line_id
+    bronze_work_centers: machine_id
+    bronze_suppliers: supplier_id
+    bronze_materials: material_id
+    bronze_carriers: carrier_id
+    bronze_customers: customer_id
+    bronze_warehouses: warehouse_id
+    bronze_capa: capa_id
+    bronze_maintenance_work_orders: work_order_id
+    bronze_nonconformances: ncr_id
+    bronze_goods_receipts: po_number
